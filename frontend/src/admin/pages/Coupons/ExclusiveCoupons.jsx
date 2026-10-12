@@ -1,0 +1,1478 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Tag,
+  Mail,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Trash2,
+  Sparkles,
+  Search,
+  Filter,
+  Check,
+  Percent,
+  X,
+  UserCheck,
+  AlertCircle,
+  Gift,
+  Timer,
+  ArrowRight,
+  Users,
+} from 'lucide-react';
+import { subscriberApi } from '../../../api/subscriberApi';
+import { adminApi } from '../../../api/adminApi';
+import { formatDate } from '../../../utils/formatters';
+import Loader from '../../../components/common/Loader';
+import { useToast } from '../../../context/ToastContext';
+import StatCard from '../../components/StatCard';
+
+export const ExclusiveCoupons = () => {
+  const [subscribers, setSubscribers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Multi-selection state
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedSub, setSelectedSub] = useState(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [discountPercent, setDiscountPercent] = useState(15);
+  const [validityMinutes, setValidityMinutes] = useState(60);
+  const [submitting, setSubmitting] = useState(false);
+  const [autoCreateBanner, setAutoCreateBanner] = useState(true);
+
+  const toast = useToast();
+
+  const fetchSubscribers = async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      const data = await subscriberApi.getSubscribers();
+      setSubscribers(data);
+    } catch {
+      if (showLoader) toast.error('Failed to load subscribers');
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubscribers(true);
+
+    // Background poll every 12 seconds for fresh data
+    const pollInterval = setInterval(() => {
+      fetchSubscribers(false);
+    }, 12000);
+
+    return () => clearInterval(pollInterval);
+  }, []);
+
+  // Live second-by-second clock so expiration triggers immediately without browser refresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Selection handlers
+  const handleToggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // Filtered subscribers
+  const filteredSubscribers = subscribers.filter((sub) => {
+    const matchesSearch =
+      sub.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (sub.couponCode && sub.couponCode.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesStatus =
+      statusFilter === 'all' || sub.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleSelectAll = () => {
+    const allFilteredIds = filteredSubscribers.map((s) => s._id);
+    const areAllSelected =
+      allFilteredIds.length > 0 &&
+      allFilteredIds.every((id) => selectedIds.includes(id));
+
+    if (areAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(allFilteredIds);
+    }
+  };
+
+  // Open single approve/edit modal
+  const openApproveModal = (sub) => {
+    setIsBulkMode(false);
+    setSelectedSub(sub);
+    const prefix = 'PAW';
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    setCouponCode(sub.couponCode || `${prefix}${randomSuffix}`);
+    setDiscountPercent(sub.discountPercent || 15);
+    setValidityMinutes(sub.validityMinutes || 60);
+    setModalOpen(true);
+  };
+
+  // Open bulk continue modal
+  const openBulkModal = () => {
+    if (selectedIds.length === 0) {
+      toast.warning('Please select at least one customer first');
+      return;
+    }
+    setIsBulkMode(true);
+    setSelectedSub(null);
+    const prefix = 'OFFER';
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    setCouponCode(`${prefix}${randomSuffix}`);
+    setDiscountPercent(15);
+    setValidityMinutes(60);
+    setModalOpen(true);
+  };
+
+  const getExpiryPreview = (mins) => {
+    const d = new Date(Date.now() + (mins || 60) * 60 * 1000);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getExpiryInfo = (expiresAt) => {
+    if (!expiresAt) return { isExpired: false, label: 'Unlimited' };
+    const expMs = new Date(expiresAt).getTime();
+    const diff = expMs - currentTime;
+    const timeStr = new Date(expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (diff <= 0) {
+      return {
+        isExpired: true,
+        label: `Expired (${timeStr})`,
+      };
+    }
+
+    const hours = Math.floor(diff / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+
+    let remainingStr = '';
+    if (hours > 0) {
+      remainingStr = `${hours}h ${mins}m`;
+    } else if (mins > 0) {
+      remainingStr = `${mins}m ${secs}s`;
+    } else {
+      remainingStr = `${secs}s`;
+    }
+
+    return {
+      isExpired: false,
+      label: `Up to ${timeStr} (${remainingStr})`,
+    };
+  };
+
+  const handleApproveSubmit = async (e) => {
+    e.preventDefault();
+    if (!couponCode.trim()) {
+      toast.error('Please enter a coupon code');
+      return;
+    }
+
+    const cleanCode = couponCode.trim().toUpperCase();
+    const cleanDiscount = Number(discountPercent) || 15;
+    const minutes = Number(validityMinutes) || 60;
+
+    try {
+      setSubmitting(true);
+
+      if (isBulkMode) {
+        // Bulk Approve for all selectedIds
+        const res = await subscriberApi.bulkApproveSubscribers({
+          ids: selectedIds,
+          couponCode: cleanCode,
+          discountPercent: cleanDiscount,
+          validityMinutes: minutes,
+        });
+
+        const updatedIds = selectedIds;
+        setSubscribers((prev) =>
+          prev.map((s) => {
+            if (updatedIds.includes(s._id)) {
+              return {
+                ...s,
+                status: 'approved',
+                couponCode: cleanCode,
+                discountPercent: cleanDiscount,
+                expiresAt: res.expiresAt,
+                validityMinutes: minutes,
+              };
+            }
+            return s;
+          })
+        );
+
+        toast.success(
+          `🎉 Successfully issued coupon "${cleanCode}" (${cleanDiscount}% OFF, ${minutes} mins) to ${selectedIds.length} customers!`
+        );
+        setSelectedIds([]);
+        setModalOpen(false);
+      } else {
+        // Single Approve
+        const updated = await subscriberApi.approveSubscriber(selectedSub._id, {
+          couponCode: cleanCode,
+          discountPercent: cleanDiscount,
+          validityMinutes: minutes,
+        });
+
+        setSubscribers((prev) =>
+          prev.map((s) => (s._id === selectedSub._id ? updated.subscriber : s))
+        );
+        toast.success(
+          `🎉 Approved! Generated coupon "${cleanCode}" (${cleanDiscount}% OFF) valid for ${minutes} mins for ${selectedSub.email}`
+        );
+        setModalOpen(false);
+      }
+
+      // Automatically create and publish Homepage Promo Banner if selected
+      if (autoCreateBanner) {
+        try {
+          await adminApi.addBanner({
+            title: `Exclusive Flash Deal: ${cleanDiscount}% OFF! 🔥`,
+            subtitle: `Use voucher code "${cleanCode}" at checkout to get instant ${cleanDiscount}% discount! Limited-time pet deal.`,
+            badge: `🎟️ Code: ${cleanCode} (${cleanDiscount}% OFF)`,
+            ctaText: `Use Code ${cleanCode}`,
+            ctaLink: '/shop',
+            image: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=1200&auto=format&fit=crop&q=80',
+            bgGradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)',
+            active: true,
+          });
+          toast.success(`🎨 Auto Promo Banner for "${cleanCode}" published to Homepage!`);
+        } catch (bannerErr) {
+          console.warn('Could not auto-create banner:', bannerErr);
+        }
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to approve subscriber(s)');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGenerateBannerForSub = async (sub) => {
+    if (!sub.couponCode) {
+      toast.warning('No coupon code assigned to this customer');
+      return;
+    }
+    const expiry = getExpiryInfo(sub.expiresAt);
+    if (expiry.isExpired) {
+      toast.error(`❌ Coupon "${sub.couponCode}" has expired! Auto-generating banner for expired coupons is not allowed.`);
+      return;
+    }
+    try {
+      await adminApi.addBanner({
+        title: `Exclusive Flash Deal: ${sub.discountPercent || 15}% OFF! 🔥`,
+        subtitle: `Use voucher code "${sub.couponCode}" at checkout to get instant ${sub.discountPercent || 15}% discount on all pet food & grooming essentials!`,
+        badge: `🎟️ Code: ${sub.couponCode} (${sub.discountPercent || 15}% OFF)`,
+        ctaText: `Claim ${sub.discountPercent || 15}% OFF`,
+        ctaLink: '/shop',
+        image: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=1200&auto=format&fit=crop&q=80',
+        bgGradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)',
+        active: true,
+      });
+      toast.success(`🎉 Auto Promo Banner published for coupon "${sub.couponCode}"! Check Store Homepage.`);
+    } catch {
+      toast.error('Failed to generate banner');
+    }
+  };
+
+  const handleReject = async (sub) => {
+    if (!window.confirm(`Reject exclusive offer access for "${sub.email}"?`)) {
+      return;
+    }
+
+    try {
+      const updated = await subscriberApi.rejectSubscriber(sub._id);
+      setSubscribers((prev) =>
+        prev.map((s) => (s._id === sub._id ? updated.subscriber : s))
+      );
+      toast.info(`Offer access rejected for ${sub.email}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reject subscriber');
+    }
+  };
+
+  const handleDelete = async (sub) => {
+    if (!window.confirm(`Permanently remove "${sub.email}" from subscriber list?`)) {
+      return;
+    }
+
+    try {
+      await subscriberApi.deleteSubscriber(sub._id);
+      setSubscribers((prev) => prev.filter((s) => s._id !== sub._id));
+      setSelectedIds((prev) => prev.filter((id) => id !== sub._id));
+      toast.success(`Removed ${sub.email}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete subscriber');
+    }
+  };
+
+  const pendingCount = subscribers.filter((s) => s.status === 'pending').length;
+  const approvedActiveCount = subscribers.filter(
+    (s) => s.status === 'approved' && (!s.expiresAt || new Date(s.expiresAt).getTime() > currentTime)
+  ).length;
+
+  const selectedCustomers = subscribers.filter((s) => selectedIds.includes(s._id));
+
+  return (
+    <div className="admin-page-container">
+      {/* Page Header */}
+      <div className="admin-page-header">
+        <div>
+          <h1 className="admin-page-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Gift className="text-primary" size={28} />
+            Exclusive Offers & Coupon Approvals
+          </h1>
+          <p className="admin-page-subtitle">
+            Select customers below and click "Continue" to generate coupon codes, set discount percentages, and validity duration!
+          </p>
+        </div>
+      </div>
+
+      {/* Metric Cards */}
+      <div className="admin-stats-grid" style={{ marginBottom: '24px' }}>
+        <StatCard
+          title="Total Join Requests"
+          value={subscribers.length}
+          icon={Mail}
+          subtitle="Newsletter & coupon subscribers"
+          variant="primary"
+        />
+        <StatCard
+          title="Pending Approval"
+          value={pendingCount}
+          icon={Clock}
+          subtitle={pendingCount > 0 ? "Requires coupon assignment" : "All requests approved"}
+          variant="amber"
+        />
+        <StatCard
+          title="Approved & Active Coupons"
+          value={approvedActiveCount}
+          icon={Tag}
+          subtitle="Active valid discount coupons"
+          variant="emerald"
+        />
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="admin-card" style={{ marginBottom: '20px', padding: '16px 20px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1', minWidth: '260px' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '360px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                placeholder="Search email or coupon code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px 9px 36px',
+                  borderRadius: '8px',
+                  border: '1px solid #d1d5db',
+                  fontSize: '14px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <Filter size={16} className="text-muted" />
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#4b5563' }}>Filter:</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {['all', 'pending', 'approved', 'rejected'].map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setStatusFilter(status)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    transition: 'all 0.15s ease',
+                    background: statusFilter === status ? '#eb5e28' : '#ffffff',
+                    color: statusFilter === status ? '#ffffff' : '#4b5563',
+                    borderColor: statusFilter === status ? '#eb5e28' : '#e5e7eb',
+                  }}
+                >
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                  {status === 'pending' && pendingCount > 0 && ` (${pendingCount})`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CONTINUAL BULK ACTION BAR - Visible when at least 1 customer is selected */}
+      {selectedIds.length > 0 && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            color: '#ffffff',
+            padding: '14px 22px',
+            borderRadius: '12px',
+            marginBottom: '18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            flexWrap: 'wrap',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+            border: '1px solid #334155',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                background: '#eb5e28',
+                color: '#ffffff',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '15px',
+                boxShadow: '0 2px 8px rgba(235, 94, 40, 0.4)',
+                flexShrink: 0,
+              }}
+            >
+              {selectedIds.length}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '15px' }}>
+                {selectedIds.length === filteredSubscribers.length
+                  ? `All ${filteredSubscribers.length} Customers Selected!`
+                  : `${selectedIds.length} of ${filteredSubscribers.length} Customers Selected`}
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8' }}>
+                Click Continue to generate coupon code, discount %, and validity time for all of them!
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* Select All Toggle */}
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              style={{
+                background: 'rgba(255, 255, 255, 0.12)',
+                color: '#ffffff',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {filteredSubscribers.every((s) => selectedIds.includes(s._id))
+                ? 'Deselect All'
+                : `Select All (${filteredSubscribers.length})`}
+            </button>
+
+            {/* Clear Selection */}
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              style={{
+                background: 'transparent',
+                color: '#94a3b8',
+                border: 'none',
+                padding: '8px 12px',
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+
+            {/* CONTINUE BUTTON */}
+            <button
+              type="button"
+              onClick={openBulkModal}
+              style={{
+                background: '#eb5e28',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px 22px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(235, 94, 40, 0.45)',
+                transition: 'transform 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              <Sparkles size={16} />
+              Continue ({selectedIds.length})
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Table */}
+      <div className="admin-card" style={{ padding: '0', overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: '60px 0', display: 'flex', justifyContent: 'center' }}>
+            <Loader message="Loading subscribers list..." />
+          </div>
+        ) : filteredSubscribers.length === 0 ? (
+          <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+            <Gift size={48} style={{ color: '#d1d5db', margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#374151' }}>No Subscribers Found</h3>
+            <p style={{ color: '#6b7280', fontSize: '14px', maxWidth: '420px', margin: '8px auto 0' }}>
+              {searchTerm || statusFilter !== 'all'
+                ? 'Try adjusting your search query or filter selection.'
+                : 'When customers enter their email in the footer "Pet Health Tips & Exclusive Offers" section, they will appear right here for approval.'}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="table-responsive-wrapper exclusive-coupons-table-desktop">
+              <table className="admin-data-table">
+                <thead>
+                <tr>
+                  {/* Checkbox column - Select All appears ONLY when at least 1 customer is selected */}
+                  <th style={{ width: '46px', textAlign: 'center' }}>
+                    {selectedIds.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredSubscribers.length > 0 &&
+                          filteredSubscribers.every((s) => selectedIds.includes(s._id))
+                        }
+                        onChange={handleSelectAll}
+                        title="Select All Customers"
+                        style={{
+                          width: '17px',
+                          height: '17px',
+                          cursor: 'pointer',
+                          accentColor: '#eb5e28',
+                        }}
+                      />
+                    )}
+                  </th>
+
+                  {/* Header title */}
+                  <th style={{ minWidth: '220px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Subscriber Email</span>
+                      {selectedIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSelectAll}
+                          style={{
+                            background: '#eb5e28',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {filteredSubscribers.every((s) => selectedIds.includes(s._id))
+                            ? 'Deselect All'
+                            : `Select All (${filteredSubscribers.length})`}
+                        </button>
+                      )}
+                    </div>
+                  </th>
+
+                  <th style={{ minWidth: '100px' }}>Join Date</th>
+                  <th style={{ minWidth: '125px' }}>Approval Status</th>
+                  <th style={{ minWidth: '125px' }}>Assigned Coupon</th>
+                  <th style={{ minWidth: '95px' }}>Discount</th>
+                  <th style={{ minWidth: '135px' }}>Time Limit / Expiry</th>
+                  <th style={{ minWidth: '160px', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSubscribers.map((sub) => {
+                  const isApproved = sub.status === 'approved';
+                  const isPending = sub.status === 'pending';
+                  const isRejected = sub.status === 'rejected';
+                  const expiryInfo = getExpiryInfo(sub.expiresAt);
+                  const isSelected = selectedIds.includes(sub._id);
+
+                  return (
+                    <tr
+                      key={sub._id}
+                      style={
+                        isSelected
+                          ? { background: 'rgba(235, 94, 40, 0.05)' }
+                          : {}
+                      }
+                    >
+                      {/* Selection Checkbox */}
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(sub._id)}
+                          style={{
+                            width: '17px',
+                            height: '17px',
+                            cursor: 'pointer',
+                            accentColor: '#eb5e28',
+                          }}
+                          aria-label={`Select ${sub.email}`}
+                        />
+                      </td>
+
+                      {/* Email */}
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '50%',
+                              background: '#f3f4f6',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#4b5563',
+                            }}
+                          >
+                            <Mail size={16} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#111827' }}>{sub.email}</div>
+                            {sub.user && (
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '11px',
+                                  color: '#059669',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <UserCheck size={12} /> Registered Account: {sub.user.name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Join Date */}
+                      <td style={{ color: '#6b7280', fontSize: '13px' }}>
+                        {formatDate(sub.createdAt || sub.updatedAt)}
+                      </td>
+
+                      {/* Status */}
+                      <td>
+                        {isPending && (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              background: '#fef3c7',
+                              color: '#b45309',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            <Clock size={13} /> Pending Approval
+                          </span>
+                        )}
+                        {isApproved && (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              background: '#d1fae5',
+                              color: '#065f46',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            <CheckCircle size={13} /> Approved
+                          </span>
+                        )}
+                        {isRejected && (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            <XCircle size={13} /> Rejected
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Coupon Code */}
+                      <td>
+                        {sub.couponCode ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              background: '#fff1ec',
+                              color: '#eb5e28',
+                              border: '1px dashed #eb5e28',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontFamily: 'monospace',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              letterSpacing: '0.5px',
+                            }}
+                          >
+                            <Tag size={13} /> {sub.couponCode}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontSize: '13px' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Discount % */}
+                      <td>
+                        {sub.discountPercent ? (
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: '#059669',
+                              fontSize: '13px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                            }}
+                          >
+                            <Percent size={13} /> {sub.discountPercent}% OFF
+                          </span>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontSize: '13px' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Time Limit / Expiry */}
+                      <td>
+                        {isApproved ? (
+                          sub.expiresAt ? (
+                            expiryInfo.isExpired ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#fee2e2',
+                                  color: '#b91c1c',
+                                  padding: '4px 8px',
+                                  borderRadius: '8px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <AlertCircle size={12} /> {expiryInfo.label}
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  padding: '4px 8px',
+                                  borderRadius: '8px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <Clock size={12} /> {expiryInfo.label}
+                              </span>
+                            )
+                          ) : (
+                            <span style={{ color: '#6b7280', fontSize: '12px' }}>
+                              Unlimited
+                            </span>
+                          )
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontSize: '13px' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => openApproveModal(sub)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '5px 9px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              background: isApproved ? '#f3f4f6' : '#10b981',
+                              color: isApproved ? '#374151' : '#ffffff',
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={isApproved ? 'Edit Coupon Code & Validity' : 'Approve & Issue Coupon Code'}
+                          >
+                            {isApproved ? (
+                              <>
+                                <Tag size={12} /> Edit
+                              </>
+                            ) : (
+                              <>
+                                <Check size={12} /> Approve
+                              </>
+                            )}
+                          </button>
+
+                          {/* Banner button is only available for active, non-expired coupons */}
+                          {isApproved && sub.couponCode && !expiryInfo.isExpired && (
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateBannerForSub(sub)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                padding: '5px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid #fed7aa',
+                                background: '#fffaf0',
+                                color: '#ea580c',
+                                fontSize: '11.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="Generate & Publish Homepage Promo Banner for this Coupon"
+                            >
+                              <Sparkles size={12} /> Banner
+                            </button>
+                          )}
+
+                          {!isRejected && (
+                            <button
+                              type="button"
+                              onClick={() => handleReject(sub)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                padding: '5px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid #fecaca',
+                                background: '#fff5f5',
+                                color: '#dc2626',
+                                fontSize: '11.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="Reject Offer Access"
+                            >
+                              <XCircle size={12} /> Reject
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(sub)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              border: '1px solid #e5e7eb',
+                              background: '#f9fafb',
+                              color: '#6b7280',
+                              cursor: 'pointer',
+                            }}
+                            title="Delete Subscriber"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Customer Cards View (Visible on screens <= 768px) */}
+          <div className="exclusive-mobile-cards-view">
+            {filteredSubscribers.map((sub) => {
+              const isApproved = sub.status === 'approved';
+              const isPending = sub.status === 'pending';
+              const isRejected = sub.status === 'rejected';
+              const expiryInfo = getExpiryInfo(sub.expiresAt);
+              const isSelected = selectedIds.includes(sub._id);
+
+              return (
+                <div
+                  key={sub._id}
+                  className={`exclusive-mobile-card ${isSelected ? 'selected' : ''}`}
+                >
+                  <div className="mobile-card-top-row">
+                    <label className="mobile-card-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelect(sub._id)}
+                        className="mobile-card-checkbox"
+                      />
+                      <div className="mobile-card-email-info">
+                        <span className="mobile-card-email">{sub.email}</span>
+                        <span className="mobile-card-date">{formatDate(sub.createdAt || sub.updatedAt)}</span>
+                      </div>
+                    </label>
+
+                    {isPending && (
+                      <span className="mobile-status-pill pending">
+                        <Clock size={11} /> Pending
+                      </span>
+                    )}
+                    {isApproved && (
+                      <span className="mobile-status-pill approved">
+                        <CheckCircle size={11} /> Approved
+                      </span>
+                    )}
+                    {isRejected && (
+                      <span className="mobile-status-pill rejected">
+                        <XCircle size={11} /> Rejected
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mobile-card-coupon-row">
+                    {sub.couponCode ? (
+                      <span className="mobile-coupon-badge">🎟️ {sub.couponCode}</span>
+                    ) : (
+                      <span className="mobile-no-coupon">No coupon assigned</span>
+                    )}
+
+                    {sub.discountPercent ? (
+                      <span className="mobile-discount-badge">%{sub.discountPercent}% OFF</span>
+                    ) : null}
+
+                    {isApproved && sub.expiresAt && (
+                      <span className={`mobile-expiry-badge ${expiryInfo.isExpired ? 'expired' : ''}`}>
+                        <Clock size={11} /> {expiryInfo.label}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mobile-card-actions-row">
+                    <button
+                      type="button"
+                      onClick={() => openApproveModal(sub)}
+                      className={`mobile-act-btn ${isApproved ? 'edit' : 'approve'}`}
+                    >
+                      {isApproved ? (
+                        <>
+                          <Tag size={13} /> Edit
+                        </>
+                      ) : (
+                        <>
+                          <Check size={13} /> Approve
+                        </>
+                      )}
+                    </button>
+
+                    {/* Banner button is only available for active, non-expired coupons */}
+                    {isApproved && sub.couponCode && !expiryInfo.isExpired && (
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateBannerForSub(sub)}
+                        className="mobile-act-btn banner"
+                      >
+                        <Sparkles size={13} /> Banner
+                      </button>
+                    )}
+
+                    {!isRejected && (
+                      <button
+                        type="button"
+                        onClick={() => handleReject(sub)}
+                        className="mobile-act-btn reject"
+                      >
+                        <XCircle size={13} /> Reject
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(sub)}
+                      className="mobile-act-btn delete"
+                      title="Delete Subscriber"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+
+      {/* Approval & Coupon Generation Modal (Single & Bulk Mode) */}
+      {modalOpen && (selectedSub || (isBulkMode && selectedIds.length > 0)) && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              overflow: 'hidden',
+              animation: 'fadeIn 0.2s ease',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '20px 24px',
+                borderBottom: '1px solid #f3f4f6',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    background: '#ecfdf5',
+                    color: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#111827' }}>
+                    {isBulkMode
+                      ? `Issue Exclusive Offer (${selectedIds.length} Customers)`
+                      : selectedSub?.status === 'approved'
+                      ? 'Edit Coupon & Validity'
+                      : 'Approve & Issue Coupon'}
+                  </h3>
+                  <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                    {isBulkMode
+                      ? `Generate discount coupon for ${selectedIds.length} selected customer(s)`
+                      : `for ${selectedSub?.email}`}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#9ca3af',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body Form */}
+            <form onSubmit={handleApproveSubmit} style={{ padding: '24px' }}>
+              {/* Selected Customer Emails Chip List for Bulk Mode */}
+              {isBulkMode && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    <Users size={14} className="text-primary" /> Target Selected Customers ({selectedIds.length})
+                  </label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '6px',
+                      maxHeight: '90px',
+                      overflowY: 'auto',
+                      padding: '8px 10px',
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    {selectedCustomers.map((s) => (
+                      <span
+                        key={s._id}
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          padding: '3px 8px',
+                          borderRadius: '12px',
+                          fontSize: '11.5px',
+                          fontWeight: 600,
+                          color: '#334155',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Mail size={11} className="text-muted" /> {s.email}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Informational Hint */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  marginBottom: '20px',
+                  fontSize: '13px',
+                  color: '#475569',
+                  lineHeight: '1.5',
+                }}
+              >
+                <strong>ℹ️ Live Notification & Real-time Expiry:</strong>
+                <p style={{ margin: '4px 0 0' }}>
+                  {isBulkMode
+                    ? `All ${selectedIds.length} customers will instantly receive this coupon in their Notification Bell with live countdowns!`
+                    : 'The client will receive an instant notification bell alert with a live real-time countdown timer.'}
+                </p>
+              </div>
+
+              {/* Coupon Code Input */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                  Coupon Code
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    required
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. PAW15"
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontFamily: 'monospace',
+                      fontSize: '15px',
+                      fontWeight: 700,
+                      letterSpacing: '1px',
+                      textTransform: 'uppercase',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const num = Math.floor(100 + Math.random() * 900);
+                      setCouponCode(`PAW${num}`);
+                    }}
+                    style={{
+                      padding: '0 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      background: '#f9fafb',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#4b5563',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    🎲 Auto-Code
+                  </button>
+                </div>
+              </div>
+
+              {/* Discount Percentage */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                  Discount Percentage (%)
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="90"
+                    value={discountPercent}
+                    onChange={(e) => setDiscountPercent(e.target.value)}
+                    style={{
+                      width: '120px',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '15px',
+                      fontWeight: 700,
+                    }}
+                  />
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#6b7280' }}>% OFF order total</span>
+                </div>
+              </div>
+
+              {/* Time Validity Selector */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Timer size={15} className="text-primary" /> Coupon Validity Time Duration
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>
+                    {validityMinutes < 60
+                      ? `${validityMinutes} Minutes`
+                      : `${Math.round((validityMinutes / 60) * 10) / 10} Hours`}
+                  </span>
+                </label>
+
+                {/* Preset quick buttons */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                  {[
+                    { label: '30 Minutes', value: 30 },
+                    { label: '1 Hour', value: 60 },
+                    { label: '2 Hours', value: 120 },
+                    { label: '6 Hours', value: 360 },
+                    { label: '24 Hours', value: 1440 },
+                  ].map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setValidityMinutes(item.value)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        border: '1px solid',
+                        transition: 'all 0.15s ease',
+                        background: validityMinutes === item.value ? '#eb5e28' : '#ffffff',
+                        color: validityMinutes === item.value ? '#ffffff' : '#374151',
+                        borderColor: validityMinutes === item.value ? '#eb5e28' : '#d1d5db',
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10080"
+                    value={validityMinutes}
+                    onChange={(e) => setValidityMinutes(Number(e.target.value) || 30)}
+                    style={{
+                      width: '120px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                    }}
+                  />
+                  <span style={{ fontSize: '13px', color: '#6b7280' }}>Custom minutes</span>
+                </div>
+
+                {/* Expiry preview card */}
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    fontSize: '12.5px',
+                    color: '#166534',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Clock size={15} />
+                  <span>
+                    Valid up to: <strong>Today at {getExpiryPreview(validityMinutes)}</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Auto Promo Banner Checkbox */}
+              <div
+                style={{
+                  background: '#fff7ed',
+                  border: '1.5px solid #fed7aa',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  marginBottom: '22px',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#9a3412',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoCreateBanner}
+                    onChange={(e) => setAutoCreateBanner(e.target.checked)}
+                    style={{
+                      width: '17px',
+                      height: '17px',
+                      accentColor: '#eb5e28',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <span>🎨 Auto-Publish Homepage Promo Banner for this Offer</span>
+                </label>
+                <p style={{ margin: '4px 0 0 27px', fontSize: '12px', color: '#c2410c', lineHeight: '1.4' }}>
+                  Automatically generates and publishes a rotating hero banner on the store homepage featuring this coupon code!
+                </p>
+              </div>
+
+              {/* Modal Buttons */}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    border: '1px solid #d1d5db',
+                    background: '#ffffff',
+                    color: '#374151',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#10b981',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)',
+                  }}
+                >
+                  {submitting
+                    ? 'Processing...'
+                    : isBulkMode
+                    ? `Issue to ${selectedIds.length} Customers`
+                    : 'Save & Issue Coupon'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ExclusiveCoupons;
