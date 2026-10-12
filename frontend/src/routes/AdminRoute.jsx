@@ -16,32 +16,8 @@ export const AdminRoute = ({ children }) => {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="unauthorized-page-container">
-        <div className="unauthorized-card">
-          <div className="unauth-icon-wrap">
-            <ShieldAlert size={48} className="text-red" />
-          </div>
-          <h2 className="unauth-title">Admin Access Required</h2>
-          <p className="unauth-desc">
-            You are currently logged in as a <strong>Customer</strong>. Only store administrators can access the admin management portal.
-          </p>
-          <div className="unauth-actions">
-            <Link to="/login" className="app-btn btn-primary">
-              Sign In as Admin
-            </Link>
-            <Link to="/" className="app-btn btn-outline">
-              <ArrowLeft size={16} /> Return to Store
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+  if (!isAuthenticated || !isAdmin) {
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
   return children;

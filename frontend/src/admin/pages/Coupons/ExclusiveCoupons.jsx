@@ -18,10 +18,12 @@ import {
   Timer,
   ArrowRight,
   Users,
+  Zap,
 } from 'lucide-react';
 import { subscriberApi } from '../../../api/subscriberApi';
 import { adminApi } from '../../../api/adminApi';
 import { formatDate } from '../../../utils/formatters';
+import { DOG_BANNER_PRESETS } from '../../../utils/constants';
 import Loader from '../../../components/common/Loader';
 import { useToast } from '../../../context/ToastContext';
 import StatCard from '../../components/StatCard';
@@ -46,7 +48,58 @@ export const ExclusiveCoupons = () => {
   const [submitting, setSubmitting] = useState(false);
   const [autoCreateBanner, setAutoCreateBanner] = useState(true);
 
+  // Dog Banner Generator Modal State (10 Dog Image Presets)
+  const [bannerModalOpen, setBannerModalOpen] = useState(false);
+  const [bannerSub, setBannerSub] = useState(null);
+  const [selectedDogImage, setSelectedDogImage] = useState(DOG_BANNER_PRESETS[0]?.url || '');
+  const [dogPresets, setDogPresets] = useState(DOG_BANNER_PRESETS);
+  const [bannerTitle, setBannerTitle] = useState('');
+  const [bannerSubtitle, setBannerSubtitle] = useState('');
+  const [bannerPublishing, setBannerPublishing] = useState(false);
+  const [activeBanners, setActiveBanners] = useState([]);
+
   const toast = useToast();
+
+  const fetchActiveBanners = async () => {
+    try {
+      const allBanners = await adminApi.getAllBanners();
+      const exclusiveList = (allBanners || []).filter((b) => b.isExclusive && b.active);
+      setActiveBanners(exclusiveList);
+    } catch {
+      try {
+        const homeBanners = await adminApi.getBanners();
+        const exclusiveList = (homeBanners || []).filter((b) => b.isExclusive && b.active);
+        setActiveBanners(exclusiveList);
+      } catch {}
+    }
+  };
+
+  const isBannerLiveForCoupon = (code) => {
+    if (!code) return false;
+    const clean = code.trim().toUpperCase();
+
+    // 1. Check in active banners state from API
+    const inActiveBanners = activeBanners.some(
+      (b) =>
+        b.isExclusive &&
+        b.active &&
+        b.couponCode &&
+        b.couponCode.trim().toUpperCase() === clean &&
+        b.expiresAt &&
+        new Date(b.expiresAt).getTime() > currentTime
+    );
+    if (inActiveBanners) return true;
+
+    // 2. Check in fast session cache for instantaneous UI feedback
+    try {
+      const cachedExp = sessionStorage.getItem(`live_banner_${clean}`);
+      if (cachedExp && new Date(cachedExp).getTime() > currentTime) {
+        return true;
+      }
+    } catch {}
+
+    return false;
+  };
 
   const fetchSubscribers = async (showLoader = true) => {
     try {
@@ -62,11 +115,20 @@ export const ExclusiveCoupons = () => {
 
   useEffect(() => {
     fetchSubscribers(true);
+    fetchActiveBanners();
 
-    // Background poll every 12 seconds for fresh data
+    // Fetch latest dog image presets from backend seeder if available
+    adminApi.getDogImages().then((imgs) => {
+      if (imgs && imgs.length > 0) {
+        setDogPresets(imgs);
+      }
+    });
+
+    // Background poll every 8 seconds for fresh subscriber & banner data
     const pollInterval = setInterval(() => {
       fetchSubscribers(false);
-    }, 12000);
+      fetchActiveBanners();
+    }, 8000);
 
     return () => clearInterval(pollInterval);
   }, []);
@@ -221,6 +283,22 @@ export const ExclusiveCoupons = () => {
         );
         setSelectedIds([]);
         setModalOpen(false);
+
+        // Open Dog Selection modal immediately for bulk approved coupon!
+        if (autoCreateBanner) {
+          setBannerSub({
+            email: `${selectedIds.length} Customers`,
+            couponCode: cleanCode,
+            discountPercent: cleanDiscount,
+            expiresAt: res.expiresAt,
+          });
+          setSelectedDogImage(dogPresets[0]?.url || DOG_BANNER_PRESETS[0].url);
+          setBannerTitle(`Exclusive Flash Deal: ${cleanDiscount}% OFF! 🔥`);
+          setBannerSubtitle(
+            `Use voucher code "${cleanCode}" at checkout to get instant ${cleanDiscount}% discount on all pet food & grooming essentials!`
+          );
+          setBannerModalOpen(true);
+        }
       } else {
         // Single Approve
         const updated = await subscriberApi.approveSubscriber(selectedSub._id, {
@@ -236,24 +314,16 @@ export const ExclusiveCoupons = () => {
           `🎉 Approved! Generated coupon "${cleanCode}" (${cleanDiscount}% OFF) valid for ${minutes} mins for ${selectedSub.email}`
         );
         setModalOpen(false);
-      }
 
-      // Automatically create and publish Homepage Promo Banner if selected
-      if (autoCreateBanner) {
-        try {
-          await adminApi.addBanner({
-            title: `Exclusive Flash Deal: ${cleanDiscount}% OFF! 🔥`,
-            subtitle: `Use voucher code "${cleanCode}" at checkout to get instant ${cleanDiscount}% discount! Limited-time pet deal.`,
-            badge: `🎟️ Code: ${cleanCode} (${cleanDiscount}% OFF)`,
-            ctaText: `Use Code ${cleanCode}`,
-            ctaLink: '/shop',
-            image: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=1200&auto=format&fit=crop&q=80',
-            bgGradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)',
-            active: true,
-          });
-          toast.success(`🎨 Auto Promo Banner for "${cleanCode}" published to Homepage!`);
-        } catch (bannerErr) {
-          console.warn('Could not auto-create banner:', bannerErr);
+        // Open Dog Selection modal immediately for single approved coupon!
+        if (autoCreateBanner && updated?.subscriber) {
+          setBannerSub(updated.subscriber);
+          setSelectedDogImage(dogPresets[0]?.url || DOG_BANNER_PRESETS[0].url);
+          setBannerTitle(`Exclusive Flash Deal: ${cleanDiscount}% OFF! 🔥`);
+          setBannerSubtitle(
+            `Use voucher code "${cleanCode}" at checkout to get instant ${cleanDiscount}% discount on all pet food & grooming essentials!`
+          );
+          setBannerModalOpen(true);
         }
       }
     } catch (err) {
@@ -263,30 +333,91 @@ export const ExclusiveCoupons = () => {
     }
   };
 
-  const handleGenerateBannerForSub = async (sub) => {
+  const handleOpenBannerModal = (sub) => {
     if (!sub.couponCode) {
       toast.warning('No coupon code assigned to this customer');
       return;
     }
     const expiry = getExpiryInfo(sub.expiresAt);
     if (expiry.isExpired) {
-      toast.error(`❌ Coupon "${sub.couponCode}" has expired! Auto-generating banner for expired coupons is not allowed.`);
+      toast.error(`❌ Coupon "${sub.couponCode}" has expired! Flash banner can only be published for active coupons.`);
       return;
     }
+
+    if (isBannerLiveForCoupon(sub.couponCode)) {
+      toast.warning(`⚡ Flash banner for "${sub.couponCode}" is already live on the Homepage! Click is disabled during its active duration.`);
+      return;
+    }
+
+    setBannerSub(sub);
+    setSelectedDogImage(dogPresets[0]?.url || DOG_BANNER_PRESETS[0].url);
+    setBannerTitle(`Exclusive Flash Deal: ${sub.discountPercent || 15}% OFF! 🔥`);
+    setBannerSubtitle(
+      `Use voucher code "${sub.couponCode}" at checkout to get instant ${sub.discountPercent || 15}% discount on all pet food & grooming essentials!`
+    );
+    setBannerModalOpen(true);
+  };
+
+  const handlePublishExclusiveBanner = async (e) => {
+    if (e) e.preventDefault();
+    if (!bannerSub) return;
+    const expiry = getExpiryInfo(bannerSub.expiresAt);
+    if (expiry.isExpired) {
+      toast.error(`❌ Coupon "${bannerSub.couponCode}" has expired!`);
+      setBannerModalOpen(false);
+      return;
+    }
+
+    if (isBannerLiveForCoupon(bannerSub.couponCode)) {
+      toast.warning(`⚡ Flash banner for "${bannerSub.couponCode}" is already live on the Homepage! Click is disabled during its active duration.`);
+      setBannerModalOpen(false);
+      return;
+    }
+
     try {
+      setBannerPublishing(true);
       await adminApi.addBanner({
-        title: `Exclusive Flash Deal: ${sub.discountPercent || 15}% OFF! 🔥`,
-        subtitle: `Use voucher code "${sub.couponCode}" at checkout to get instant ${sub.discountPercent || 15}% discount on all pet food & grooming essentials!`,
-        badge: `🎟️ Code: ${sub.couponCode} (${sub.discountPercent || 15}% OFF)`,
-        ctaText: `Claim ${sub.discountPercent || 15}% OFF`,
+        title: bannerTitle || `Exclusive Flash Deal: ${bannerSub.discountPercent || 15}% OFF! 🔥`,
+        subtitle:
+          bannerSubtitle ||
+          `Use voucher code "${bannerSub.couponCode}" at checkout to get instant ${bannerSub.discountPercent || 15}% discount on all pet food & grooming essentials!`,
+        badge: `⚡ FLASH DEAL • ${bannerSub.discountPercent || 15}% OFF`,
+        ctaText: `Claim ${bannerSub.discountPercent || 15}% OFF`,
         ctaLink: '/shop',
-        image: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=1200&auto=format&fit=crop&q=80',
+        image: selectedDogImage || dogPresets[0]?.url || DOG_BANNER_PRESETS[0].url,
         bgGradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)',
         active: true,
+        isExclusive: true,
+        couponCode: bannerSub.couponCode,
+        discountPercent: bannerSub.discountPercent || 15,
+        expiresAt: bannerSub.expiresAt,
       });
-      toast.success(`🎉 Auto Promo Banner published for coupon "${sub.couponCode}"! Check Store Homepage.`);
-    } catch {
-      toast.error('Failed to generate banner');
+
+      // Update activeBanners and sessionStorage cache so button disables immediately
+      const upperCode = bannerSub.couponCode.trim().toUpperCase();
+      try {
+        sessionStorage.setItem(`live_banner_${upperCode}`, bannerSub.expiresAt);
+      } catch {}
+
+      setActiveBanners((prev) => [
+        ...prev.filter((b) => b.couponCode?.trim().toUpperCase() !== upperCode),
+        {
+          isExclusive: true,
+          active: true,
+          couponCode: upperCode,
+          expiresAt: bannerSub.expiresAt,
+        },
+      ]);
+
+      toast.success(
+        `🎉 Exclusive Flash Banner for "${bannerSub.couponCode}" published! It will stay on Homepage for ${expiry.label}. Other banners are temporarily hidden.`
+      );
+      setBannerModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Failed to generate banner');
+    } finally {
+      setBannerPublishing(false);
     }
   };
 
@@ -297,6 +428,13 @@ export const ExclusiveCoupons = () => {
 
     try {
       const updated = await subscriberApi.rejectSubscriber(sub._id);
+      if (sub.couponCode) {
+        const clean = sub.couponCode.trim().toUpperCase();
+        try {
+          sessionStorage.removeItem(`live_banner_${clean}`);
+        } catch {}
+        setActiveBanners((prev) => prev.filter((b) => b.couponCode?.trim().toUpperCase() !== clean));
+      }
       setSubscribers((prev) =>
         prev.map((s) => (s._id === sub._id ? updated.subscriber : s))
       );
@@ -313,6 +451,13 @@ export const ExclusiveCoupons = () => {
 
     try {
       await subscriberApi.deleteSubscriber(sub._id);
+      if (sub.couponCode) {
+        const clean = sub.couponCode.trim().toUpperCase();
+        try {
+          sessionStorage.removeItem(`live_banner_${clean}`);
+        } catch {}
+        setActiveBanners((prev) => prev.filter((b) => b.couponCode?.trim().toUpperCase() !== clean));
+      }
       setSubscribers((prev) => prev.filter((s) => s._id !== sub._id));
       setSelectedIds((prev) => prev.filter((id) => id !== sub._id));
       toast.success(`Removed ${sub.email}`);
@@ -625,6 +770,7 @@ export const ExclusiveCoupons = () => {
                   const isRejected = sub.status === 'rejected';
                   const expiryInfo = getExpiryInfo(sub.expiresAt);
                   const isSelected = selectedIds.includes(sub._id);
+                  const isBannerLive = isBannerLiveForCoupon(sub.couponCode);
 
                   return (
                     <tr
@@ -877,28 +1023,64 @@ export const ExclusiveCoupons = () => {
 
                           {/* Banner button is only available for active, non-expired coupons */}
                           {isApproved && sub.couponCode && !expiryInfo.isExpired && (
-                            <button
-                              type="button"
-                              onClick={() => handleGenerateBannerForSub(sub)}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                padding: '5px 8px',
-                                borderRadius: '6px',
-                                border: '1px solid #fed7aa',
-                                background: '#fffaf0',
-                                color: '#ea580c',
-                                fontSize: '11.5px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                                whiteSpace: 'nowrap',
-                              }}
-                              title="Generate & Publish Homepage Promo Banner for this Coupon"
-                            >
-                              <Sparkles size={12} /> Banner
-                            </button>
+                            isBannerLive ? (
+                              <button
+                                type="button"
+                                disabled
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '5px 9px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #86efac',
+                                  background: '#f0fdf4',
+                                  color: '#15803d',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  cursor: 'not-allowed',
+                                  pointerEvents: 'none',
+                                  opacity: 0.95,
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={`⚡ Exclusive Flash Banner is currently LIVE on Homepage until ${expiryInfo.label}. Clicking is disabled while active.`}
+                              >
+                                <span
+                                  style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: '#22c55e',
+                                    boxShadow: '0 0 6px rgba(34, 197, 94, 0.8)',
+                                    display: 'inline-block',
+                                  }}
+                                />
+                                Live on Home
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenBannerModal(sub)}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  padding: '5px 8px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #fed7aa',
+                                  background: '#fffaf0',
+                                  color: '#ea580c',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title="Generate & Publish Homepage Promo Banner for this Coupon"
+                              >
+                                <Sparkles size={12} /> Banner
+                              </button>
+                            )
                           )}
 
                           {!isRejected && (
@@ -961,6 +1143,7 @@ export const ExclusiveCoupons = () => {
               const isRejected = sub.status === 'rejected';
               const expiryInfo = getExpiryInfo(sub.expiresAt);
               const isSelected = selectedIds.includes(sub._id);
+              const isBannerLive = isBannerLiveForCoupon(sub.couponCode);
 
               return (
                 <div
@@ -1035,13 +1218,47 @@ export const ExclusiveCoupons = () => {
 
                     {/* Banner button is only available for active, non-expired coupons */}
                     {isApproved && sub.couponCode && !expiryInfo.isExpired && (
-                      <button
-                        type="button"
-                        onClick={() => handleGenerateBannerForSub(sub)}
-                        className="mobile-act-btn banner"
-                      >
-                        <Sparkles size={13} /> Banner
-                      </button>
+                      isBannerLive ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="mobile-act-btn banner-live"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#f0fdf4',
+                            color: '#15803d',
+                            border: '1px solid #86efac',
+                            cursor: 'not-allowed',
+                            pointerEvents: 'none',
+                            opacity: 0.95,
+                            fontSize: '11px',
+                            fontWeight: 700,
+                          }}
+                          title={`⚡ Exclusive Flash Banner is currently LIVE on Homepage until ${expiryInfo.label}. Clicking is disabled while active.`}
+                        >
+                          <span
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: '#22c55e',
+                              boxShadow: '0 0 6px rgba(34, 197, 94, 0.8)',
+                              display: 'inline-block',
+                            }}
+                          />
+                          Live on Home
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenBannerModal(sub)}
+                          className="mobile-act-btn banner"
+                        >
+                          <Sparkles size={13} /> Banner
+                        </button>
+                      )
                     )}
 
                     {!isRejected && (
@@ -1420,7 +1637,7 @@ export const ExclusiveCoupons = () => {
                   <span>🎨 Auto-Publish Homepage Promo Banner for this Offer</span>
                 </label>
                 <p style={{ margin: '4px 0 0 27px', fontSize: '12px', color: '#c2410c', lineHeight: '1.4' }}>
-                  Automatically generates and publishes a rotating hero banner on the store homepage featuring this coupon code!
+                  When checked, saving will immediately open the Dog Photo Selector so you can choose 1 of 10 dogs and launch your flash banner!
                 </p>
               </div>
 
@@ -1465,6 +1682,509 @@ export const ExclusiveCoupons = () => {
                     : isBulkMode
                     ? `Issue to ${selectedIds.length} Customers`
                     : 'Save & Issue Coupon'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dog Banner Generator Modal (10 Dog Image Picker) */}
+      {bannerModalOpen && bannerSub && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '18px',
+              maxWidth: '860px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              border: '1px solid #e2e8f0',
+              animation: 'fadeIn 0.2s ease',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '20px 24px',
+                borderBottom: '1px solid #f1f5f9',
+                position: 'sticky',
+                top: 0,
+                background: '#ffffff',
+                zIndex: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: '#fff1ec',
+                    color: '#ea580c',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(234, 88, 12, 0.2)',
+                  }}
+                >
+                  <Sparkles size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
+                    Auto-Generate Homepage Flash Banner
+                  </h3>
+                  <div style={{ fontSize: '13px', color: '#64748b' }}>
+                    Select 1 of 10 curated dog photos to create an exclusive flash deal on the Storefront Homepage!
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBannerModalOpen(false)}
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handlePublishExclusiveBanner} style={{ padding: '24px' }}>
+              {/* Coupon Info & Expiry Strip */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
+                  border: '1.5px solid #fed7aa',
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      background: '#ea580c',
+                      color: '#ffffff',
+                      padding: '5px 12px',
+                      borderRadius: '8px',
+                      fontFamily: 'monospace',
+                      fontWeight: 800,
+                      fontSize: '14px',
+                      letterSpacing: '1px',
+                    }}
+                  >
+                    🎟️ {bannerSub.couponCode}
+                  </span>
+                  <span
+                    style={{
+                      background: '#ffffff',
+                      color: '#059669',
+                      border: '1px solid #a7f3d0',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                    }}
+                  >
+                    {bannerSub.discountPercent || 15}% OFF
+                  </span>
+                  <span
+                    style={{
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #bfdbfe',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '12.5px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <Clock size={13} /> {getExpiryInfo(bannerSub.expiresAt).label}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '12.5px', color: '#9a3412', fontWeight: 600 }}>
+                  Customer: <strong>{bannerSub.email}</strong>
+                </div>
+              </div>
+
+              {/* Behavior Notice */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  marginBottom: '22px',
+                  fontSize: '13px',
+                  color: '#334155',
+                  lineHeight: '1.5',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
+                  <Zap size={15} style={{ color: '#ea580c' }} />
+                  <span>Exclusive Homepage Takeover Rule:</span>
+                </div>
+                <span>
+                  While this coupon is active, <strong>all standard banners will be hidden</strong> and this auto-generated dog banner will be displayed exclusively on the Homepage. Once the coupon duration expires ({getExpiryInfo(bannerSub.expiresAt).label}), this banner will automatically vanish and standard banners will be restored!
+                </span>
+              </div>
+
+              {/* Step 1: Dog Selection Grid (10 Dogs) */}
+              <div style={{ marginBottom: '22px' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <span>🐾 Step 1: Select Dog Photo (10 Curated Breed Presets)</span>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
+                    Click an image to select
+                  </span>
+                </label>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                    gap: '12px',
+                  }}
+                >
+                  {dogPresets.map((dog, idx) => {
+                    const isSelected = selectedDogImage === dog.url;
+                    return (
+                      <div
+                        key={dog.id || idx}
+                        onClick={() => setSelectedDogImage(dog.url)}
+                        style={{
+                          position: 'relative',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          border: isSelected ? '3px solid #ea580c' : '2px solid #e2e8f0',
+                          boxShadow: isSelected
+                            ? '0 0 0 3px rgba(234, 88, 12, 0.25), 0 8px 16px rgba(0,0,0,0.1)'
+                            : '0 1px 3px rgba(0,0,0,0.05)',
+                          transition: 'all 0.18s ease',
+                          background: '#ffffff',
+                          transform: isSelected ? 'scale(1.02)' : 'none',
+                        }}
+                      >
+                        <div style={{ position: 'relative', paddingTop: '75%', background: '#f1f5f9' }}>
+                          <img
+                            src={dog.url}
+                            alt={dog.name || dog.breed}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                          {isSelected && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '6px',
+                                right: '6px',
+                                background: '#ea580c',
+                                color: '#ffffff',
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                              }}
+                            >
+                              <Check size={14} />
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ padding: '8px 10px' }}>
+                          <div
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: isSelected ? '#ea580c' : '#1e293b',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                            title={dog.name}
+                          >
+                            {dog.name || `Dog #${idx + 1}`}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: '#64748b',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {dog.breed}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Step 2: Live Banner Preview */}
+              <div style={{ marginBottom: '22px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    marginBottom: '10px',
+                  }}
+                >
+                  👁️ Step 2: Live Homepage Preview
+                </label>
+
+                <div
+                  style={{
+                    borderRadius: '14px',
+                    overflow: 'hidden',
+                    position: 'relative',
+                    minHeight: '220px',
+                    backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.85)), url(${selectedDogImage})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    padding: '24px 28px',
+                    color: '#ffffff',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  {/* Flash Tag in Preview */}
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      color: '#ffffff',
+                      padding: '5px 12px',
+                      borderRadius: '9999px',
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <Zap size={13} style={{ color: '#fef08a' }} />
+                    <span>FLASH DEAL:</span>
+                    <span style={{ color: '#fef08a', fontFamily: 'monospace' }}>
+                      ⏱️ {getExpiryInfo(bannerSub.expiresAt).label}
+                    </span>
+                  </div>
+
+                  <h3
+                    style={{
+                      fontSize: '20px',
+                      fontWeight: 800,
+                      margin: '0 0 8px',
+                      color: '#ffffff',
+                      textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    {bannerTitle}
+                  </h3>
+
+                  <p
+                    style={{
+                      fontSize: '13px',
+                      color: '#f8fafc',
+                      margin: '0 0 14px',
+                      maxWidth: '560px',
+                      lineHeight: '1.45',
+                      opacity: 0.95,
+                    }}
+                  >
+                    {bannerSubtitle}
+                  </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <div
+                      style={{
+                        background: '#ea580c',
+                        color: '#ffffff',
+                        padding: '7px 16px',
+                        borderRadius: '8px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Claim {bannerSub.discountPercent || 15}% OFF →
+                    </div>
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        backdropFilter: 'blur(6px)',
+                        color: '#fef08a',
+                        border: '1px dashed rgba(255, 255, 255, 0.6)',
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12.5px',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Voucher: {bannerSub.couponCode}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3: Customize Banner Texts (Optional) */}
+              <div style={{ marginBottom: '24px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    marginBottom: '8px',
+                  }}
+                >
+                  ✏️ Step 3: Headline & Subtitle (Auto-filled)
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <input
+                      type="text"
+                      required
+                      value={bannerTitle}
+                      onChange={(e) => setBannerTitle(e.target.value)}
+                      placeholder="Banner Title"
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      required
+                      value={bannerSubtitle}
+                      onChange={(e) => setBannerSubtitle(e.target.value)}
+                      placeholder="Banner Subtitle description"
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '13.5px',
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '12px',
+                  borderTop: '1px solid #f1f5f9',
+                  paddingTop: '18px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setBannerModalOpen(false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    border: '1px solid #d1d5db',
+                    background: '#ffffff',
+                    color: '#374151',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={bannerPublishing}
+                  style={{
+                    padding: '11px 24px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: bannerPublishing ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(234, 88, 12, 0.4)',
+                  }}
+                >
+                  <Sparkles size={16} />
+                  {bannerPublishing
+                    ? 'Publishing Flash Banner...'
+                    : `Publish Flash Banner (${bannerSub.couponCode})`}
                 </button>
               </div>
             </form>

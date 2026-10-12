@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { PawPrint, Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePet } from '../../hooks/usePet';
@@ -19,9 +19,22 @@ export const Register = () => {
   const { register } = useAuth();
   const { addPet } = usePet();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const getRedirectPath = () => {
+    if (location.state?.from) {
+      if (typeof location.state.from === 'string') {
+        return location.state.from;
+      }
+      if (location.state.from.pathname) {
+        return `${location.state.from.pathname}${location.state.from.search || ''}`;
+      }
+    }
+    return null;
   };
 
   const handleSubmit = async (e) => {
@@ -40,7 +53,8 @@ export const Register = () => {
             userId: res.user.id,
           });
         }
-        navigate('/pet-profile');
+        const destination = getRedirectPath();
+        navigate(destination || (formData.petName ? '/pet-profile' : '/'), { replace: true });
       }
     } finally {
       setLoading(false);
@@ -65,7 +79,7 @@ export const Register = () => {
             value={formData.name}
             onChange={handleChange}
             prefixIcon={User}
-            placeholder="Aayush Shrestha"
+            placeholder="Ram Sharma"
             required
           />
 
@@ -76,7 +90,7 @@ export const Register = () => {
             value={formData.email}
             onChange={handleChange}
             prefixIcon={Mail}
-            placeholder="aayush@gmail.com"
+            placeholder="ram@gmail.com"
             required
           />
 
@@ -145,7 +159,7 @@ export const Register = () => {
 
         <div className="auth-footer-text">
           Already registered?{' '}
-          <Link to="/login" className="auth-switch-link">
+          <Link to="/login" state={location.state} className="auth-switch-link">
             Sign In Here
           </Link>
         </div>

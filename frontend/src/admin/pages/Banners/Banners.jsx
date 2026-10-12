@@ -14,11 +14,9 @@ import {
   Edit3,
   ArrowRight,
   X,
-  Tag,
   Palette,
 } from 'lucide-react';
 import { adminApi } from '../../../api/adminApi';
-import { subscriberApi } from '../../../api/subscriberApi';
 import Button from '../../../components/common/Button';
 import Input from '../../../components/common/Input';
 import Modal from '../../../components/common/Modal';
@@ -116,7 +114,6 @@ export const Banners = () => {
   const [editingBannerId, setEditingBannerId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showAutoSection, setShowAutoSection] = useState(true);
-  const [activeCoupon, setActiveCoupon] = useState(null);
 
   const fileInputRef = useRef(null);
 
@@ -145,24 +142,8 @@ export const Banners = () => {
     }
   };
 
-  // Check if there are active exclusive coupons to offer 1-click active coupon banner
-  const checkActiveCoupons = async () => {
-    try {
-      const subs = await subscriberApi.getSubscribers();
-      const approved = subs.find(
-        (s) => s.status === 'approved' && s.couponCode && (!s.expiresAt || new Date(s.expiresAt).getTime() > Date.now())
-      );
-      if (approved) {
-        setActiveCoupon(approved);
-      }
-    } catch {
-      // optional background check
-    }
-  };
-
   useEffect(() => {
     fetchBanners();
-    checkActiveCoupons();
   }, []);
 
   const handleToggleActive = async (banner) => {
@@ -242,45 +223,6 @@ export const Banners = () => {
       toast.success(`🎉 Auto-Banner "${preset.title}" published directly to Store Homepage!`);
     } catch {
       toast.error('Failed to create banner');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // 1-Click Auto Banner from Active Approved Coupon
-  const handlePublishActiveCouponBanner = async () => {
-    if (!activeCoupon) {
-      toast.warning('No active coupon found in Exclusive Coupons');
-      return;
-    }
-
-    if (activeCoupon.expiresAt && new Date(activeCoupon.expiresAt).getTime() <= Date.now()) {
-      toast.error(`❌ Coupon "${activeCoupon.couponCode}" has already expired! Auto-generating banner for expired coupons is not allowed.`);
-      setActiveCoupon(null);
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      const code = activeCoupon.couponCode;
-      const discount = activeCoupon.discountPercent || 15;
-
-      const payload = {
-        title: `Exclusive Flash Deal: ${discount}% OFF! 🔥`,
-        subtitle: `Use voucher code ${code} at checkout to get instant ${discount}% discount on all pet food & grooming essentials!`,
-        badge: `🎟️ Code: ${code} (${discount}% OFF)`,
-        ctaText: `Claim ${discount}% Discount`,
-        ctaLink: '/shop',
-        image: 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=1200&auto=format&fit=crop&q=80',
-        bgGradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)',
-        active: true,
-      };
-
-      const created = await adminApi.addBanner(payload);
-      setBanners((prev) => [...prev, created]);
-      toast.success(`🎉 Auto-Banner for Coupon "${code}" published to Homepage!`);
-    } catch {
-      toast.error('Failed to publish coupon banner');
     } finally {
       setSubmitting(false);
     }
@@ -413,36 +355,6 @@ export const Banners = () => {
                 </p>
               </div>
             </div>
-
-            {/* If an active coupon exists, show special 1-click coupon banner button */}
-            {activeCoupon && (
-              <button
-                type="button"
-                className="auto-banner-coupon-btn"
-                onClick={handlePublishActiveCouponBanner}
-                disabled={submitting}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '9px 18px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                  transition: 'transform 0.15s ease',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-              >
-                <Tag size={16} />
-                Auto-Publish Coupon Banner ({activeCoupon.couponCode})
-              </button>
-            )}
           </div>
 
           {/* Preset Cards Grid */}

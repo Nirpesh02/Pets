@@ -13,15 +13,25 @@ export const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const redirectPath = location.state?.from?.pathname || '/';
+  const getRedirectPath = () => {
+    if (location.state?.from) {
+      if (typeof location.state.from === 'string') {
+        return location.state.from;
+      }
+      if (location.state.from.pathname) {
+        return `${location.state.from.pathname}${location.state.from.search || ''}`;
+      }
+    }
+    return '/';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await login(email, password);
+      const res = await login(email, password, 'customer');
       if (res.success) {
-        navigate(res.user.role === 'admin' ? '/admin' : redirectPath, { replace: true });
+        navigate(getRedirectPath(), { replace: true });
       }
     } catch {
       // Toast message already handled by AuthContext
@@ -90,7 +100,7 @@ export const Login = () => {
 
         <div className="auth-footer-text">
           Don't have an account yet?{' '}
-          <Link to="/register" className="auth-switch-link">
+          <Link to="/register" state={location.state} className="auth-switch-link">
             Create an Account
           </Link>
         </div>

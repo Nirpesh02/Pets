@@ -1,5 +1,6 @@
 import Subscriber from '../models/Subscriber.js';
 import User from '../models/User.js';
+import Banner from '../models/Banner.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 
 // @desc    Join newsletter / exclusive offers
@@ -100,6 +101,8 @@ export const approveSubscriber = async (req, res, next) => {
       return sendError(res, 'Subscriber not found', 404);
     }
 
+    const previousCode = subscriber.couponCode;
+
     // Generate coupon code if not provided
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const finalCode = (couponCode || `PAW${discountPercent || 15}-${randomSuffix}`).trim().toUpperCase();
@@ -124,6 +127,30 @@ export const approveSubscriber = async (req, res, next) => {
     subscriber.validityMinutes = finalValidityMinutes;
     subscriber.isReadByUser = false;
     await subscriber.save();
+
+    // Automatically sync active Homepage Exclusive Flash Banner if present
+    const isBannerActive = new Date(finalExpiresAt) > new Date();
+    await Banner.updateMany(
+      {
+        $or: [
+          ...(previousCode ? [{ couponCode: previousCode }] : []),
+          { couponCode: finalCode },
+          { isExclusive: true, active: true },
+        ],
+      },
+      {
+        $set: {
+          couponCode: finalCode,
+          discountPercent: finalDiscount,
+          expiresAt: finalExpiresAt,
+          active: isBannerActive,
+          title: `Exclusive Flash Deal: ${finalDiscount}% OFF! 🔥`,
+          subtitle: `Use voucher code "${finalCode}" at checkout to get instant ${finalDiscount}% discount on all pet food & grooming essentials!`,
+          badge: `⚡ FLASH DEAL • ${finalDiscount}% OFF`,
+          ctaText: `Use Code ${finalCode}`,
+        },
+      }
+    );
 
     return sendSuccess(
       res,
@@ -174,6 +201,29 @@ export const bulkApproveSubscribers = async (req, res, next) => {
       }
     );
 
+    // Automatically sync active Homepage Exclusive Flash Banner if present
+    const isBannerActive = new Date(finalExpiresAt) > new Date();
+    await Banner.updateMany(
+      {
+        $or: [
+          { couponCode: finalCode },
+          { isExclusive: true, active: true },
+        ],
+      },
+      {
+        $set: {
+          couponCode: finalCode,
+          discountPercent: finalDiscount,
+          expiresAt: finalExpiresAt,
+          active: isBannerActive,
+          title: `Exclusive Flash Deal: ${finalDiscount}% OFF! 🔥`,
+          subtitle: `Use voucher code "${finalCode}" at checkout to get instant ${finalDiscount}% discount on all pet food & grooming essentials!`,
+          badge: `⚡ FLASH DEAL • ${finalDiscount}% OFF`,
+          ctaText: `Use Code ${finalCode}`,
+        },
+      }
+    );
+
     const updatedSubscribers = await Subscriber.find({ _id: { $in: ids } });
 
     return sendSuccess(
@@ -201,6 +251,13 @@ export const rejectSubscriber = async (req, res, next) => {
       return sendError(res, 'Subscriber not found', 404);
     }
 
+    if (subscriber.couponCode) {
+      await Banner.updateMany(
+        { couponCode: subscriber.couponCode, isExclusive: true },
+        { $set: { active: false } }
+      );
+    }
+
     subscriber.status = 'rejected';
     subscriber.couponCode = '';
     await subscriber.save();
@@ -218,6 +275,13 @@ export const deleteSubscriber = async (req, res, next) => {
     const subscriber = await Subscriber.findById(req.params.id);
     if (!subscriber) {
       return sendError(res, 'Subscriber not found', 404);
+    }
+
+    if (subscriber.couponCode) {
+      await Banner.updateMany(
+        { couponCode: subscriber.couponCode, isExclusive: true },
+        { $set: { active: false } }
+      );
     }
 
     await Subscriber.findByIdAndDelete(req.params.id);

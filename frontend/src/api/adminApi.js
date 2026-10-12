@@ -48,10 +48,19 @@ export const adminApi = {
   },
 
   // Promotional banners
+  async getDogImages() {
+    try {
+      const response = await axiosClient.get('/banners/dog-images');
+      return response.data?.dogImages || response.dogImages || [];
+    } catch {
+      return [];
+    }
+  },
+
   async getBanners() {
     try {
       const response = await axiosClient.get('/banners');
-      return response.data?.banners || [];
+      return response.data?.banners || response.banners || [];
     } catch (error) {
       console.warn('Backend API /banners error:', error.message);
       return [];
@@ -61,7 +70,7 @@ export const adminApi = {
   async getAllBanners() {
     try {
       const response = await axiosClient.get('/banners/all');
-      return response.data?.banners || [];
+      return response.data?.banners || response.banners || response || [];
     } catch (error) {
       console.warn('Backend API /banners/all error:', error.message);
       return [];

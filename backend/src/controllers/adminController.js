@@ -4,6 +4,9 @@ import PetProfile from '../models/PetProfile.js';
 import User from '../models/User.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 
+const isSuperAdminUser = (u) =>
+  Boolean(u?.isSuperAdmin || u?.email === 'nirpeshdhungel7@gmail.com');
+
 // Helper to compute expiry info
 const computeExpiryInfo = (expiryDate) => {
   if (!expiryDate) return { status: 'unknown', label: 'No Expiry', color: 'neutral', daysLeft: 999 };
@@ -114,7 +117,7 @@ export const getCustomers = async (req, res, next) => {
       const custOrders = orders.filter((o) => String(o.user) === String(u._id));
       const custPets = pets.filter((p) => String(p.user) === String(u._id));
       const totalSpent = custOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-      const isSuper = Boolean(u.isSuperAdmin || u.email === 'admin@pawnepal.com');
+      const isSuper = isSuperAdminUser(u);
 
       return {
         id: u._id,
@@ -150,7 +153,7 @@ export const toggleBlockCustomer = async (req, res, next) => {
     }
 
     // Super Admin cannot be blocked
-    if (user.isSuperAdmin || user.email === 'admin@pawnepal.com') {
+    if (isSuperAdminUser(user)) {
       return sendError(res, 'Super Administrator cannot be blocked.', 400);
     }
 
@@ -182,7 +185,7 @@ export const deleteCustomer = async (req, res, next) => {
     }
 
     // Super Admin cannot be deleted
-    if (user.isSuperAdmin || user.email === 'admin@pawnepal.com') {
+    if (isSuperAdminUser(user)) {
       return sendError(res, 'Super Administrator cannot be deleted.', 400);
     }
 
@@ -216,7 +219,7 @@ export const changeUserRole = async (req, res, next) => {
     }
 
     // Protect Super Admin
-    if (user.isSuperAdmin || user.email === 'admin@pawnepal.com') {
+    if (isSuperAdminUser(user)) {
       return sendError(res, 'Cannot change the role of Super Administrator.', 400);
     }
 

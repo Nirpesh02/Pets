@@ -1,12 +1,63 @@
 import Banner from '../models/Banner.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { SEED_DOG_BANNER_IMAGES } from '../constants/dogBannerPresets.js';
 
-// @desc    Get all active banners for homepage
+// @desc    Get curated dog images for banner selection
+// @route   GET /api/v1/banners/dog-images
+export const getDogImages = async (req, res, next) => {
+  try {
+    return sendSuccess(res, { dogImages: SEED_DOG_BANNER_IMAGES }, 'Dog banner images fetched');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all active banners for homepage (Hides normal banners when exclusive flash banner is active)
 // @route   GET /api/v1/banners
 export const getBanners = async (req, res, next) => {
   try {
-    const banners = await Banner.find({ active: true }).sort('displayOrder');
-    return sendSuccess(res, { banners }, 'Banners fetched');
+    const now = new Date();
+
+    // 1. Automatically deactivate expired exclusive flash banners
+    await Banner.updateMany(
+      { isExclusive: true, expiresAt: { $lte: now }, active: true },
+      { $set: { active: false } }
+    );
+
+    // 2. Check if an active exclusive coupon banner is active
+    const activeExclusiveBanner = await Banner.findOne({
+      isExclusive: true,
+      active: true,
+      expiresAt: { $gt: now },
+    }).sort('-createdAt');
+
+    // If an exclusive banner is active, return ONLY that banner!
+    if (activeExclusiveBanner) {
+      return sendSuccess(
+        res,
+        {
+          banners: [activeExclusiveBanner],
+          isExclusiveActive: true,
+          exclusiveBanner: activeExclusiveBanner,
+        },
+        'Exclusive flash banner active'
+      );
+    }
+
+    // 3. Otherwise return all standard active banners
+    const banners = await Banner.find({
+      active: true,
+      isExclusive: { $ne: true },
+    }).sort('displayOrder');
+
+    return sendSuccess(
+      res,
+      {
+        banners,
+        isExclusiveActive: false,
+      },
+      'Standard banners fetched'
+    );
   } catch (error) {
     next(error);
   }
@@ -16,7 +67,7 @@ export const getBanners = async (req, res, next) => {
 // @route   GET /api/v1/banners/all
 export const getAllBanners = async (req, res, next) => {
   try {
-    const banners = await Banner.find().sort('displayOrder');
+    const banners = await Banner.find().sort('-createdAt');
     return sendSuccess(res, { banners }, 'All banners fetched');
   } catch (error) {
     next(error);
@@ -27,6 +78,14 @@ export const getAllBanners = async (req, res, next) => {
 // @route   POST /api/v1/banners
 export const createBanner = async (req, res, next) => {
   try {
+    if (req.body.isExclusive) {
+      // Deactivate older exclusive banners so new flash deal takes exclusive priority
+      await Banner.updateMany(
+        { isExclusive: true, active: true },
+        { $set: { active: false } }
+      );
+    }
+
     const banner = await Banner.create(req.body);
     return sendSuccess(res, { banner }, 'Banner created', 201);
   } catch (error) {

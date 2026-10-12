@@ -1,6 +1,9 @@
 import User from '../models/User.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 
+export const isSuperAdminAccount = (u) =>
+  Boolean(u?.isSuperAdmin || u?.email === 'nirpeshdhungel7@gmail.com');
+
 // @desc    Register a new user
 // @route   POST /api/v1/auth/register
 export const register = async (req, res, next) => {
@@ -36,7 +39,7 @@ export const register = async (req, res, next) => {
           phone: user.phone,
           avatar: user.avatar,
           address: user.address,
-          isSuperAdmin: Boolean(user.isSuperAdmin || user.email === 'admin@pawnepal.com'),
+          isSuperAdmin: isSuperAdminAccount(user),
         },
       },
       'User registered successfully',
@@ -51,7 +54,7 @@ export const register = async (req, res, next) => {
 // @route   POST /api/v1/auth/login
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, portal } = req.body;
 
     if (!email || !password) {
       return sendError(res, 'Please provide an email and password', 400);
@@ -71,10 +74,28 @@ export const login = async (req, res, next) => {
       return sendError(res, 'Invalid credentials', 401);
     }
 
-    const isSuper = Boolean(user.isSuperAdmin || user.email === 'admin@pawnepal.com');
-    // Ensure isSuperAdmin flag is persisted for initial super admin
-    if (user.email === 'admin@pawnepal.com' && !user.isSuperAdmin) {
+    // Strict portal separation: Customer Login vs Admin Portal
+    if (portal === 'customer' && user.role === 'admin') {
+      return sendError(
+        res,
+        'Admin accounts cannot log in through the Customer Login page. Please visit /admin to log in.',
+        403
+      );
+    }
+
+    if (portal === 'admin' && user.role !== 'admin') {
+      return sendError(
+        res,
+        'Access denied. Only authorized administrators can access the Admin Portal.',
+        403
+      );
+    }
+
+    const isSuper = isSuperAdminAccount(user);
+    // Ensure isSuperAdmin flag and admin role are persisted for super admins
+    if (user.email === 'nirpeshdhungel7@gmail.com' && (!user.isSuperAdmin || user.role !== 'admin')) {
       user.isSuperAdmin = true;
+      user.role = 'admin';
       await user.save();
     }
 
@@ -108,7 +129,7 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
-    const isSuper = Boolean(user.isSuperAdmin || user.email === 'admin@pawnepal.com');
+    const isSuper = isSuperAdminAccount(user);
     return sendSuccess(
       res,
       {
@@ -175,7 +196,7 @@ export const updateProfile = async (req, res, next) => {
 
     await user.save();
 
-    const isSuper = Boolean(user.isSuperAdmin || user.email === 'admin@pawnepal.com');
+    const isSuper = isSuperAdminAccount(user);
     const token = user.getSignedJwtToken();
 
     return sendSuccess(
@@ -216,7 +237,7 @@ export const uploadAvatar = async (req, res, next) => {
       { new: true }
     );
 
-    const isSuper = Boolean(user.isSuperAdmin || user.email === 'admin@pawnepal.com');
+    const isSuper = isSuperAdminAccount(user);
 
     return sendSuccess(
       res,

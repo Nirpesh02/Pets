@@ -102,7 +102,7 @@ export const Checkout = () => {
         userId: user?.id || 'guest',
         customerName: shippingAddress.fullName,
         customerPhone: shippingAddress.phone,
-        customerEmail: user?.email || 'customer@pawnepal.com',
+        customerEmail: user?.email || '',
         items: cartItems,
         petId: activePet?.id || null,
         petName: activePet ? `${activePet.name} (${activePet.species === 'cat' ? '🐈' : '🐕'})` : null,

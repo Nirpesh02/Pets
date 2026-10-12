@@ -1,11 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { DELIVERY_ZONES } from '../utils/constants';
 import { useToast } from './ToastContext';
+import { useAuth } from '../hooks/useAuth';
 import { subscriberApi } from '../api/subscriberApi';
 
 const CartContext = createContext(null);
 
 export const CartProvider = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [cartItems, setCartItems] = useState(() => {
     try {
       const raw = localStorage.getItem('pawnepal_cart');
@@ -47,6 +52,16 @@ export const CartProvider = ({ children }) => {
       // ignore
     }
   }, [cartItems]);
+
+  // If user is not authenticated, cart items are cleared
+  useEffect(() => {
+    if (!isAuthenticated && cartItems.length > 0) {
+      setCartItems([]);
+      try {
+        localStorage.removeItem('pawnepal_cart');
+      } catch {}
+    }
+  }, [isAuthenticated, cartItems.length]);
 
   // Sync promo code details to session storage
   useEffect(() => {
@@ -115,6 +130,12 @@ export const CartProvider = ({ children }) => {
   }, [promoCode, couponExpiresAt]);
 
   const addToCart = (product, quantity = 1, selectedVariant = null) => {
+    if (!isAuthenticated) {
+      toast.warning('Please log in first to add items to your cart! 🐾');
+      navigate('/login', { state: { from: location } });
+      return false;
+    }
+
     const variantName = selectedVariant ? selectedVariant.weight : (product.variants?.[0]?.weight || 'Standard');
     const price = selectedVariant ? selectedVariant.price : product.price;
     const cartItemId = `${product._id || product.id}-${variantName}`;

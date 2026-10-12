@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   PawPrint,
@@ -12,6 +12,10 @@ import {
   Heart,
   ShoppingCart,
   Calendar,
+  Clock,
+  Tag,
+  Check,
+  Zap,
 } from 'lucide-react';
 import { productApi } from '../../api/productApi';
 import { adminApi } from '../../api/adminApi';
@@ -28,29 +32,70 @@ export const Home = () => {
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [copiedCoupon, setCopiedCoupon] = useState(false);
+  const hasRefreshedExpiredRef = useRef(false);
+
   const { addToCart } = useCart();
   const { activePet } = usePet();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const loadHomeData = async () => {
-      try {
-        setLoading(true);
-        const [bannersData, prodsData] = await Promise.all([
-          adminApi.getBanners(),
-          productApi.getFeaturedProducts(),
-        ]);
-        const activeBanners = bannersData.filter((b) => b.active);
-        setBanners(activeBanners.length > 0 ? activeBanners : bannersData);
-        setFeaturedProducts(prodsData);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadHomeData();
+  const loadBanners = useCallback(async () => {
+    try {
+      const bannersData = await adminApi.getBanners();
+      const activeBanners = bannersData.filter((b) => b.active);
+      setBanners(activeBanners.length > 0 ? activeBanners : bannersData);
+      setActiveBannerIndex(0);
+    } catch (err) {
+      console.warn('Failed to load banners:', err);
+    }
   }, []);
 
-  // Auto rotate banner every 5 seconds
+  const loadHomeData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [bannersData, prodsData] = await Promise.all([
+        adminApi.getBanners(),
+        productApi.getFeaturedProducts(),
+      ]);
+      const activeBanners = bannersData.filter((b) => b.active);
+      setBanners(activeBanners.length > 0 ? activeBanners : bannersData);
+      setFeaturedProducts(prodsData);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHomeData();
+  }, [loadHomeData]);
+
+  // Live second-by-second ticker for exclusive countdown & auto-refresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Periodic background check every 5s and on window focus to keep banners & countdown live
+  useEffect(() => {
+    const periodicPoll = setInterval(() => {
+      loadBanners();
+    }, 5000);
+
+    const handleFocus = () => {
+      loadBanners();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      clearInterval(periodicPoll);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadBanners]);
+
+  // Auto rotate standard banner every 5.5s (only when there are multiple banners)
   useEffect(() => {
     if (banners.length <= 1) return;
     const interval = setInterval(() => {
@@ -60,6 +105,52 @@ export const Home = () => {
   }, [banners.length]);
 
   const currentBanner = banners[activeBannerIndex];
+
+  // Auto-expire detection: When exclusive banner timer reaches 0, immediately re-fetch to restore standard banners!
+  useEffect(() => {
+    if (currentBanner?.isExclusive && currentBanner?.expiresAt) {
+      const expMs = new Date(currentBanner.expiresAt).getTime();
+      const diff = expMs - currentTime;
+
+      if (diff <= 0) {
+        if (!hasRefreshedExpiredRef.current) {
+          hasRefreshedExpiredRef.current = true;
+          // Trigger immediate reload to switch back to normal banners
+          loadBanners().then(() => {
+            setTimeout(() => {
+              hasRefreshedExpiredRef.current = false;
+            }, 3000);
+          });
+        }
+      } else {
+        hasRefreshedExpiredRef.current = false;
+      }
+    }
+  }, [currentTime, currentBanner, loadBanners]);
+
+  // Format remaining time for countdown badge
+  const getRemainingTimeString = (expiresAt) => {
+    if (!expiresAt) return null;
+    const diff = new Date(expiresAt).getTime() - currentTime;
+    if (diff <= 0) return 'Expired';
+
+    const hours = Math.floor(diff / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+
+    const pad = (n) => String(n).padStart(2, '0');
+    if (hours > 0) {
+      return `${hours}h ${pad(mins)}m ${pad(secs)}s`;
+    }
+    return `${pad(mins)}m ${pad(secs)}s`;
+  };
+
+  const handleCopyCouponCode = (code) => {
+    if (!code) return;
+    navigator.clipboard?.writeText(code);
+    setCopiedCoupon(true);
+    setTimeout(() => setCopiedCoupon(false), 2500);
+  };
 
   return (
     <div className="home-page-root">
@@ -75,9 +166,107 @@ export const Home = () => {
             }}
           >
             <div className="container hero-content-wrapper">
-              <div className="hero-badge-tag">{currentBanner.badge}</div>
+              {/* Exclusive Flash Offer Live Countdown Banner Tag */}
+              {currentBanner.isExclusive && currentBanner.expiresAt ? (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    color: '#ffffff',
+                    padding: '8px 18px',
+                    borderRadius: '9999px',
+                    fontSize: '0.88rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.5px',
+                    marginBottom: '16px',
+                    boxShadow: '0 4px 16px rgba(220, 38, 38, 0.45)',
+                    border: '1.5px solid rgba(255, 255, 255, 0.4)',
+                    backdropFilter: 'blur(8px)',
+                  }}
+                >
+                  <Zap size={16} style={{ color: '#fef08a' }} />
+                  <span>LIMITED-TIME FLASH DEAL:</span>
+                  <span
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.3)',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.95rem',
+                      letterSpacing: '1px',
+                      color: '#fef08a',
+                    }}
+                  >
+                    ⏱️ {getRemainingTimeString(currentBanner.expiresAt)}
+                  </span>
+                </div>
+              ) : (
+                <div className="hero-badge-tag">{currentBanner.badge}</div>
+              )}
+
               <h1 className="hero-heading">{currentBanner.title}</h1>
               <p className="hero-subtext">{currentBanner.subtitle}</p>
+
+              {/* Exclusive Voucher Code Copy Pill */}
+              {currentBanner.couponCode && (
+                <div style={{ marginBottom: '22px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCouponCode(currentBanner.couponCode)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      backdropFilter: 'blur(10px)',
+                      color: '#ffffff',
+                      border: '1.5px dashed rgba(255, 255, 255, 0.7)',
+                      borderRadius: '10px',
+                      padding: '8px 16px',
+                      cursor: 'pointer',
+                      fontSize: '0.92rem',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title="Click to copy coupon code to clipboard"
+                  >
+                    <Tag size={16} style={{ color: '#fef08a' }} />
+                    <span>Coupon Voucher:</span>
+                    <strong
+                      style={{
+                        color: '#fef08a',
+                        fontFamily: 'monospace',
+                        fontSize: '1.05rem',
+                        letterSpacing: '1px',
+                      }}
+                    >
+                      {currentBanner.couponCode}
+                    </strong>
+                    <span
+                      style={{
+                        background: copiedCoupon ? '#10b981' : 'rgba(255, 255, 255, 0.25)',
+                        color: '#ffffff',
+                        padding: '3px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      {copiedCoupon ? (
+                        <>
+                          <Check size={12} /> Copied!
+                        </>
+                      ) : (
+                        'Tap to Copy'
+                      )}
+                    </span>
+                  </button>
+                </div>
+              )}
 
               <div className="hero-cta-group">
                 <Link to={currentBanner.ctaLink || '/shop'}>
@@ -92,7 +281,7 @@ export const Home = () => {
                 </Link>
               </div>
 
-              {/* Banner indicators */}
+              {/* Banner indicators (only when multiple banners exist) */}
               {banners.length > 1 && (
                 <div className="banner-indicators-row">
                   {banners.map((_, idx) => (

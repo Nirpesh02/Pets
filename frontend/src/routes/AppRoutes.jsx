@@ -33,6 +33,7 @@ import Inventory from '../admin/pages/Inventory/Inventory';
 import Banners from '../admin/pages/Banners/Banners';
 import Customers from '../admin/pages/Customers/Customers';
 import ExclusiveCoupons from '../admin/pages/Coupons/ExclusiveCoupons';
+import AdminLogin from '../admin/pages/Auth/AdminLogin';
 
 // Main Customer Layout Wrapper
 const MainStoreLayout = () => {
@@ -57,7 +58,14 @@ export const AppRoutes = () => {
         <Route path="/shop" element={<Shop />} />
         <Route path="/products/:id" element={<ProductDetail />} />
         <Route path="/cart" element={<Cart />} />
-        <Route path="/checkout" element={<Checkout />} />
+        <Route
+          path="/checkout"
+          element={
+            <ProtectedRoute>
+              <Checkout />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -80,6 +88,9 @@ export const AppRoutes = () => {
           }
         />
       </Route>
+
+      {/* Dedicated Admin Login Route */}
+      <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Admin Control Panel Routes */}
       <Route

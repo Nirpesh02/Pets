@@ -162,7 +162,10 @@ export const Customers = () => {
                 {customers.map((cust) => {
                   const custId = cust._id || cust.id;
                   const customerPets = pets.filter((p) => p.user === custId || p.userId === custId);
-                  const isSuper = Boolean(cust.isSuperAdmin || cust.email === 'admin@pawnepal.com');
+                  const isSuper = Boolean(
+                    cust.isSuperAdmin ||
+                    cust.email === 'nirpeshdhungel7@gmail.com'
+                  );
                   const isSelf = currentUser && (
                     String(custId) === String(currentUser.id || currentUser._id) ||
                     cust.email === currentUser.email
@@ -382,7 +385,10 @@ export const Customers = () => {
             {customers.map((cust) => {
               const custId = cust._id || cust.id;
               const customerPets = pets.filter((p) => p.user === custId || p.userId === custId);
-              const isSuper = Boolean(cust.isSuperAdmin || cust.email === 'admin@pawnepal.com');
+              const isSuper = Boolean(
+                cust.isSuperAdmin ||
+                cust.email === 'nirpeshdhungel7@gmail.com'
+              );
               const isSelf = currentUser && (
                 String(custId) === String(currentUser.id || currentUser._id) ||
                 cust.email === currentUser.email

@@ -22,21 +22,13 @@ const connectDB = async () => {
 
 const SEED_USERS = [
   {
-    name: 'PawNepal Administrator',
-    email: 'admin@pawnepal.com',
-    password: 'password123',
+    name: 'Nirpesh Dhungel',
+    email: 'nirpeshdhungel7@gmail.com',
+    password: '123456',
     role: 'admin',
     isSuperAdmin: true,
     phone: '+977 9800000001',
-    address: { street: 'Baluwatar', city: 'Kathmandu' },
-  },
-  {
-    name: 'Aayush Shrestha',
-    email: 'customer@pawnepal.com',
-    password: 'password123',
-    role: 'customer',
-    phone: '+977 9841234567',
-    address: { street: 'Baluwatar Ward 4', city: 'Kathmandu' },
+    address: { street: 'Gauradaha Ward -2', city: 'Jhapa' },
   },
 ];
 
@@ -71,6 +63,8 @@ const SEED_BANNERS = [
     active: true,
   },
 ];
+
+export { SEED_DOG_BANNER_IMAGES } from '../constants/dogBannerPresets.js';
 
 const SEED_PRODUCTS = [
   {
@@ -201,8 +195,7 @@ const importData = async () => {
     await PetProfile.deleteMany();
     await Order.deleteMany();
 
-    const createdUsers = await User.create(SEED_USERS);
-    const customerUser = createdUsers[1];
+    await User.create(SEED_USERS);
 
     await Category.insertMany(SEED_CATEGORIES);
     await Banner.insertMany(SEED_BANNERS);
@@ -235,8 +228,11 @@ const destroyData = async () => {
   }
 };
 
-if (process.argv[2] === '-d') {
-  destroyData();
-} else {
-  importData();
+const isDirectRun = process.argv[1] && process.argv[1].replace(/\\/g, '/').endsWith('seeder.js');
+if (isDirectRun) {
+  if (process.argv[2] === '-d') {
+    destroyData();
+  } else {
+    importData();
+  }
 }

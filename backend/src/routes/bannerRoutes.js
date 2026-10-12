@@ -5,6 +5,7 @@ import {
   createBanner,
   updateBanner,
   deleteBanner,
+  getDogImages,
 } from '../controllers/bannerController.js';
 import { protect } from '../middlewares/authMiddleware.js';
 import { verifyAdmin } from '../middlewares/roleMiddleware.js';
@@ -12,6 +13,7 @@ import { verifyAdmin } from '../middlewares/roleMiddleware.js';
 const router = express.Router();
 
 router.get('/', getBanners);
+router.get('/dog-images', getDogImages);
 router.get('/all', getAllBanners);
 
 router.post('/', createBanner);

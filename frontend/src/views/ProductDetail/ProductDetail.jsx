@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   ShoppingCart,
   Zap,
@@ -16,6 +16,8 @@ import {
 import { productApi } from '../../api/productApi';
 import { formatNPR, formatDate, getExpiryStatus } from '../../utils/formatters';
 import { useCart } from '../../hooks/useCart';
+import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../context/ToastContext';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import Loader from '../../components/common/Loader';
@@ -24,6 +26,9 @@ import Alert from '../../components/feedback/Alert';
 export const ProductDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated } = useAuth();
+  const toast = useToast();
   const [product, setProduct] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [quantity, setQuantity] = useState(1);
@@ -64,10 +69,20 @@ export const ProductDetail = () => {
   const expInfo = getExpiryStatus(product.expiryDate);
 
   const handleAddToCart = () => {
+    if (!isAuthenticated) {
+      toast.warning('Please log in first to add items to your cart! 🐾');
+      navigate('/login', { state: { from: location } });
+      return;
+    }
     addToCart(product, quantity, selectedVariant);
   };
 
   const handleBuyNow = () => {
+    if (!isAuthenticated) {
+      toast.warning('Please log in first to buy products! 🐾');
+      navigate('/login', { state: { from: location } });
+      return;
+    }
     addToCart(product, quantity, selectedVariant);
     navigate('/checkout');
   };
@@ -337,7 +352,14 @@ export const ProductDetail = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => addToCart(p, 1)}
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          toast.warning('Please log in first to add items to your cart! 🐾');
+                          navigate('/login', { state: { from: location } });
+                          return;
+                        }
+                        addToCart(p, 1);
+                      }}
                     >
                       Add
                     </Button>

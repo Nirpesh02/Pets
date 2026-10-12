@@ -27,13 +27,23 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, [toast]);
 
-  const login = async (email, password) => {
+  const login = async (email, password, portal = null) => {
     setLoading(true);
     try {
-      const res = await axiosClient.post('/auth/login', { email, password });
+      const res = await axiosClient.post('/auth/login', { email, password, portal });
       const payload = res.data || res;
       if (payload?.token) {
         const authUser = payload.user;
+
+        // Frontend validation for strict role isolation
+        if (portal === 'customer' && authUser.role === 'admin') {
+          throw new Error('Admin accounts cannot log in through the Customer Login page. Please visit /admin to log in.');
+        }
+
+        if (portal === 'admin' && authUser.role !== 'admin') {
+          throw new Error('Access denied. Only authorized administrators can access the Admin Portal.');
+        }
+
         setUser(authUser);
         setToken(payload.token);
         sessionStorage.setItem('pawnepal_user', JSON.stringify(authUser));
@@ -138,7 +148,10 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = Boolean(user && token);
   const isAdmin = user?.role === 'admin';
-  const isSuperAdmin = Boolean(user?.isSuperAdmin || user?.email === 'admin@pawnepal.com');
+  const isSuperAdmin = Boolean(
+    user?.isSuperAdmin ||
+    user?.email === 'nirpeshdhungel7@gmail.com'
+  );
 
   return (
     <AuthContext.Provider

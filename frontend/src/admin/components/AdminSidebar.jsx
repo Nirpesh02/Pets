@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
@@ -17,6 +17,12 @@ import { useAuth } from '../../hooks/useAuth';
 
 export const AdminSidebar = ({ isOpen, onClose }) => {
   const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleAdminLogout = () => {
+    logout();
+    navigate('/admin/login');
+  };
 
   return (
     <>
@@ -117,7 +123,7 @@ export const AdminSidebar = ({ isOpen, onClose }) => {
           <button
             type="button"
             className="admin-logout-btn"
-            onClick={logout}
+            onClick={handleAdminLogout}
           >
             <LogOut size={16} />
             <span>Sign Out</span>

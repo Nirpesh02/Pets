@@ -38,6 +38,22 @@ const bannerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    isExclusive: {
+      type: Boolean,
+      default: false,
+    },
+    couponCode: {
+      type: String,
+      default: null,
+    },
+    discountPercent: {
+      type: Number,
+      default: null,
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

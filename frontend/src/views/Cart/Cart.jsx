@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../hooks/useCart';
 import { usePet } from '../../hooks/usePet';
+import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../context/ToastContext';
 import { formatNPR } from '../../utils/formatters';
 import { DELIVERY_ZONES } from '../../utils/constants';
 import Button from '../../components/common/Button';
@@ -36,9 +38,20 @@ export const Cart = () => {
     finalTotal,
   } = useCart();
 
+  const { isAuthenticated } = useAuth();
+  const toast = useToast();
   const { activePet } = usePet();
   const [promoInput, setPromoInput] = useState('');
   const navigate = useNavigate();
+
+  const handleProceedToCheckout = () => {
+    if (!isAuthenticated) {
+      toast.warning('Please log in first to proceed to checkout! 🐾');
+      navigate('/login', { state: { from: '/checkout' } });
+      return;
+    }
+    navigate('/checkout');
+  };
 
   const handleApplyPromo = (e) => {
     e.preventDefault();
@@ -238,7 +251,7 @@ export const Cart = () => {
               fullWidth
               icon={ArrowRight}
               iconPosition="right"
-              onClick={() => navigate('/checkout')}
+              onClick={handleProceedToCheckout}
               className="mt-4"
             >
               Proceed to Checkout
