@@ -11,7 +11,8 @@ import {
   Check,
 } from 'lucide-react';
 import { productApi } from '../../api/productApi';
-import { CATEGORIES, BRANDS, PET_TYPES, LIFE_STAGES, DIETARY_REQUIREMENTS } from '../../utils/constants';
+import { brandApi } from '../../api/brandApi';
+import { CATEGORIES, BRANDS, PET_TYPES, getLifeStagesForPet, DIETARY_REQUIREMENTS } from '../../utils/constants';
 import { formatNPR, getExpiryStatus } from '../../utils/formatters';
 import { useCart } from '../../hooks/useCart';
 import Button from '../../components/common/Button';
@@ -22,6 +23,7 @@ import Sidebar from '../../components/layout/Sidebar';
 export const Shop = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
+  const [availableBrands, setAvailableBrands] = useState(BRANDS);
   const [loading, setLoading] = useState(true);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const { addToCart } = useCart();
@@ -72,6 +74,23 @@ export const Shop = () => {
     fetchCatalog();
   }, [search, category, petType, lifeStage, brand, sortBy, maxPrice, inStockOnly]);
 
+  useEffect(() => {
+    const loadBrands = async () => {
+      try {
+        const brandDocs = await brandApi.getBrands();
+        if (Array.isArray(brandDocs) && brandDocs.length > 0) {
+          const names = brandDocs.map((b) => (typeof b === 'string' ? b : b.name));
+          setAvailableBrands(Array.from(new Set([...names, ...BRANDS])));
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic brands, using defaults:', err);
+      }
+    };
+    loadBrands();
+  }, []);
+
+  const currentLifeStages = getLifeStagesForPet(petType);
+
   const activeFilterCount =
     (category !== 'all' ? 1 : 0) +
     (petType !== 'all' ? 1 : 0) +
@@ -100,7 +119,15 @@ export const Shop = () => {
               key={pt.id}
               type="button"
               className={`filter-option-btn ${petType === pt.id ? 'active' : ''}`}
-              onClick={() => updateFilter('petType', pt.id)}
+              onClick={() => {
+                updateFilter('petType', pt.id);
+                if (lifeStage !== 'all') {
+                  const targetStages = getLifeStagesForPet(pt.id);
+                  if (!targetStages.some((s) => s.id === lifeStage)) {
+                    updateFilter('lifeStage', 'all');
+                  }
+                }
+              }}
             >
               <span>{pt.icon} {pt.label}</span>
               {petType === pt.id && <Check size={14} />}
@@ -136,16 +163,18 @@ export const Shop = () => {
 
       {/* Life Stage */}
       <div className="filter-group-block">
-        <h4 className="filter-group-title">Life Stage</h4>
+        <h4 className="filter-group-title">
+          Life Stage {petType !== 'all' ? `(${PET_TYPES.find((p) => p.id === petType)?.label || petType})` : ''}
+        </h4>
         <div className="filter-options-list">
-          {LIFE_STAGES.map((ls) => (
+          {currentLifeStages.map((ls) => (
             <button
               key={ls.id}
               type="button"
               className={`filter-option-btn ${lifeStage === ls.id ? 'active' : ''}`}
               onClick={() => updateFilter('lifeStage', ls.id)}
             >
-              <span>{ls.label}</span>
+              <span>{ls.icon ? `${ls.icon} ` : ''}{ls.label}</span>
               {lifeStage === ls.id && <Check size={14} />}
             </button>
           ))}
@@ -155,15 +184,16 @@ export const Shop = () => {
       {/* Brand */}
       <div className="filter-group-block">
         <h4 className="filter-group-title">Brand</h4>
-        <div className="filter-options-list">
+        <div className="filter-options-list" style={{ maxHeight: '260px', overflowY: 'auto' }}>
           <button
             type="button"
             className={`filter-option-btn ${brand === 'all' ? 'active' : ''}`}
             onClick={() => updateFilter('brand', 'all')}
           >
             <span>All Brands</span>
+            {brand === 'all' && <Check size={14} />}
           </button>
-          {BRANDS.map((b) => (
+          {availableBrands.map((b) => (
             <button
               key={b}
               type="button"

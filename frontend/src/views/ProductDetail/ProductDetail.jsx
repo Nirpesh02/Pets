@@ -19,6 +19,7 @@ import {
 import { productApi } from '../../api/productApi';
 import { reviewApi } from '../../api/reviewApi';
 import { formatNPR, formatDate, getExpiryStatus } from '../../utils/formatters';
+import { getLifeStageLabel } from '../../utils/constants';
 import { useCart } from '../../hooks/useCart';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../context/ToastContext';
@@ -256,6 +257,16 @@ export const ProductDetail = () => {
             <span className="brand-badge-pill">{product.brand}</span>
             <span className="category-badge-pill">{product.category}</span>
             <span className="pet-badge-pill">{product.petType?.toUpperCase()}</span>
+            {product.lifeStage && product.lifeStage !== 'all' && (
+              <span className="category-badge-pill" style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fde68a' }}>
+                🌱 {getLifeStageLabel(product.lifeStage, product.petType)}
+              </span>
+            )}
+            {product.breedSpecific && product.breedSpecific !== 'All Breeds' && (
+              <span className="category-badge-pill" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>
+                🏷️ {product.breedSpecific}
+              </span>
+            )}
           </div>
 
           <h1 className="detail-product-title">{product.name}</h1>

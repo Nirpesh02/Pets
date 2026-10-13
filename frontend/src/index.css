@@ -266,6 +266,15 @@ h1, h2, h3, h4, h5, h6 {
   background: #059669;
 }
 
+.btn-danger {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
 .app-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -485,6 +494,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  overscroll-behavior: contain;
   animation: fadeIn 0.2s ease;
 }
 
@@ -500,6 +510,7 @@ h1, h2, h3, h4, h5, h6 {
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   animation: modalScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -526,7 +537,10 @@ h1, h2, h3, h4, h5, h6 {
 .modal-title { font-size: 1.25rem; font-weight: 700; }
 .modal-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-top: 2px; }
 .modal-close-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); }
-.modal-body { padding: 24px; }
+.modal-body {
+  padding: 24px;
+  overscroll-behavior: contain;
+}
 .modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--border-light);

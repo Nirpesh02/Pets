@@ -17,23 +17,116 @@ export const CATEGORIES = [
 ];
 
 export const LIFE_STAGES = [
-  { id: 'all', label: 'All Ages' },
-  { id: 'puppy_kitten', label: 'Puppy / Kitten (< 1 yr)' },
-  { id: 'junior', label: 'Junior (1 - 2 yrs)' },
-  { id: 'adult', label: 'Adult (2 - 7 yrs)' },
-  { id: 'senior', label: 'Senior (7+ yrs)' },
+  { id: 'all', label: 'All Ages / All Stages', icon: '🐾' },
+  { id: 'puppy_kitten', label: 'Baby / Starter (Puppy, Kitten, Chick, Fry, Kit)', icon: '🍼' },
+  { id: 'junior', label: 'Junior / Growing (Young, Fledgling, Fingerling)', icon: '🌱' },
+  { id: 'adult', label: 'Adult (Maintenance & Active)', icon: '⭐' },
+  { id: 'senior', label: 'Senior & Mature Care (7+ yrs)', icon: '🌿' },
 ];
 
+export const LIFE_STAGES_BY_PET = {
+  all: [
+    { id: 'all', label: 'All Ages / All Stages', icon: '🐾' },
+    { id: 'puppy_kitten', label: 'Baby / Starter (Puppy, Kitten, Chick, Fry, Kit)', icon: '🍼' },
+    { id: 'junior', label: 'Junior / Growing (Young, Fledgling, Fingerling)', icon: '🌱' },
+    { id: 'adult', label: 'Adult (Maintenance & Active)', icon: '⭐' },
+    { id: 'senior', label: 'Senior & Mature Care (7+ yrs)', icon: '🌿' },
+  ],
+  dog: [
+    { id: 'all', label: 'All Ages', icon: '🐾' },
+    { id: 'puppy_kitten', label: 'Puppy (< 1 yr)', icon: '🐶' },
+    { id: 'junior', label: 'Junior (1 - 2 yrs)', icon: '🐕' },
+    { id: 'adult', label: 'Adult (2 - 7 yrs)', icon: '🦮' },
+    { id: 'senior', label: 'Senior (7+ yrs)', icon: '🐕‍🦺' },
+  ],
+  cat: [
+    { id: 'all', label: 'All Ages', icon: '🐾' },
+    { id: 'puppy_kitten', label: 'Kitten (< 1 yr)', icon: '🐱' },
+    { id: 'junior', label: 'Junior (1 - 2 yrs)', icon: '🐈' },
+    { id: 'adult', label: 'Adult (2 - 7 yrs)', icon: '🐈‍⬛' },
+    { id: 'senior', label: 'Senior (7+ yrs)', icon: '🤍' },
+  ],
+  bird: [
+    { id: 'all', label: 'All Ages', icon: '🐾' },
+    { id: 'chick_hatchling', label: 'Chick / Hatchling (Baby - Hand Feeding)', icon: '🐣' },
+    { id: 'fledgling_juvenile', label: 'Fledgling / Juvenile (Young Bird)', icon: '🐥' },
+    { id: 'adult_bird', label: 'Adult Bird (1+ yr)', icon: '🦜' },
+    { id: 'senior_bird', label: 'Senior / Breeding Adult', icon: '🪶' },
+  ],
+  fish: [
+    { id: 'all', label: 'All Stages', icon: '🐾' },
+    { id: 'fry_larvae', label: 'Fry / Larvae (Baby Fish / Hatchling)', icon: '🐟' },
+    { id: 'juvenile_fingerling', label: 'Fingerling / Juvenile (Growing Fish)', icon: '🐠' },
+    { id: 'adult_fish', label: 'Adult Fish (Community / Marine)', icon: '🐡' },
+  ],
+  small_animal: [
+    { id: 'all', label: 'All Ages', icon: '🐾' },
+    { id: 'kit_pup', label: 'Kit / Pup (Baby / Weaning)', icon: '🐹' },
+    { id: 'young_small_pet', label: 'Young / Growing (< 6 mos)', icon: '🐇' },
+    { id: 'adult_small_pet', label: 'Adult Small Pet (6+ mos)', icon: '🐰' },
+    { id: 'senior_small_pet', label: 'Senior Small Pet (3+ yrs)', icon: '🌾' },
+  ],
+};
+
+export const getLifeStagesForPet = (petType = 'all') => {
+  return LIFE_STAGES_BY_PET[petType] || LIFE_STAGES_BY_PET.all;
+};
+
+export const getLifeStageLabel = (lifeStageId, petType = 'all') => {
+  if (!lifeStageId || lifeStageId === 'all') return 'All Ages';
+  const list = LIFE_STAGES_BY_PET[petType] || LIFE_STAGES_BY_PET.all;
+  const found = list.find((s) => s.id === lifeStageId);
+  if (found) return found.label;
+  for (const key of Object.keys(LIFE_STAGES_BY_PET)) {
+    const match = LIFE_STAGES_BY_PET[key].find((s) => s.id === lifeStageId);
+    if (match) return match.label;
+  }
+  return lifeStageId.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 export const BRANDS = [
+  // Dogs & Cats Popular in Nepal
   'Royal Canin',
   'Drools',
   'Pedigree',
   'Whiskas',
   'Farmina N&D',
   'Himalaya Pet Care',
+  'Me-O',
+  'SmartHeart',
+  'Purepet',
   'Purina Supercoat',
   'Orijen',
   'Acana',
+  'JerHigh',
+  'Gnawlers',
+  'Choostix',
+  'Bio-Groom',
+  'Beaphar',
+  'Canine Creek',
+  'Taste of the Wild',
+  // Birds Popular in Nepal
+  'Vitapol',
+  'Versele-Laga',
+  'Petslife',
+  'ZuPreem',
+  'Kaytee',
+  'Rio',
+  // Fish & Aqua Popular in Nepal
+  'Taiyo',
+  'Optimum',
+  'Tetra',
+  'Hikari',
+  'Atman',
+  'SunSun',
+  'Dymax',
+  'Sobo',
+  'Aquadene',
+  'Ocean Free',
+  // Small Pets Popular in Nepal
+  'Oxbow',
+  'Little One',
+  'Chipsi',
 ];
 
 export const DIETARY_REQUIREMENTS = [
@@ -48,6 +141,7 @@ export const DIETARY_REQUIREMENTS = [
 
 export const BREEDS_BY_PET = {
   dog: [
+    'All Breeds',
     'Golden Retriever',
     'German Shepherd',
     'Labrador Retriever',
@@ -57,19 +151,56 @@ export const BREEDS_BY_PET = {
     'Siberian Husky',
     'Shih Tzu',
     'Spitz / Japanese Spitz',
+    'Cocker Spaniel',
+    'Rottweiler',
+    'Doberman',
     'Mixed Breed / Nepali Local',
   ],
   cat: [
+    'All Breeds',
     'Persian Cat',
     'British Shorthair',
     'Siamese',
     'Maine Coon',
     'Ragdoll',
+    'Bengal Cat',
     'Nepali Domestic Shorthair',
   ],
-  bird: ['Budgerigar', 'Cockatiel', 'Lovebird', 'African Grey'],
-  fish: ['Goldfish', 'Betta', 'Guppy', 'Molly', 'Angelfish'],
-  small_animal: ['Syrian Hamster', 'Guinea Pig', 'Rabbit', 'Chinchilla'],
+  bird: [
+    'All Breeds',
+    'Budgerigar (Bajrika)',
+    'Cockatiel',
+    'Lovebird',
+    'African Grey Parrot',
+    'Ringneck Parrot (Suga)',
+    'Conure',
+    'Finch / Zebra Finch',
+    'Canary',
+    'Pigeon & Dove',
+  ],
+  fish: [
+    'All Breeds',
+    'Goldfish (Oranda / Black Moor)',
+    'Betta (Fighter Fish)',
+    'Guppy',
+    'Molly',
+    'Angelfish',
+    'Neon Tetra',
+    'Cichlid (African / American)',
+    'Koi & Pond Fish',
+    'Arowana',
+    'Sucker Catfish (Pleco)',
+    'Barb & Danio',
+  ],
+  small_animal: [
+    'All Breeds',
+    'Syrian Hamster',
+    'Dwarf Hamster',
+    'Guinea Pig (Nepali / Peruvian)',
+    'Dutch Rabbit',
+    'Lop-Eared Rabbit',
+    'Chinchilla',
+  ],
 };
 
 export const DELIVERY_ZONES = [

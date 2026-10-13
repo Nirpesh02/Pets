@@ -44,8 +44,8 @@ const productSchema = new mongoose.Schema(
     },
     lifeStage: {
       type: String,
-      enum: ['all', 'puppy_kitten', 'junior', 'adult', 'senior'],
-      default: 'adult',
+      default: 'all',
+      trim: true,
     },
     breedSpecific: {
       type: String,

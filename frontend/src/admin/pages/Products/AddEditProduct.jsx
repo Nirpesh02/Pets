@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Upload, X, Check, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Upload, X, Check, Image as ImageIcon, ChevronDown, Search } from 'lucide-react';
 import { productApi } from '../../../api/productApi';
 import { uploadApi } from '../../../api/uploadApi';
-import { CATEGORIES, BRANDS, PET_TYPES, LIFE_STAGES, DIETARY_REQUIREMENTS } from '../../../utils/constants';
+import { brandApi } from '../../../api/brandApi';
+import {
+  CATEGORIES,
+  BRANDS,
+  PET_TYPES,
+  LIFE_STAGES,
+  LIFE_STAGES_BY_PET,
+  getLifeStagesForPet,
+  BREEDS_BY_PET,
+  DIETARY_REQUIREMENTS,
+} from '../../../utils/constants';
 import Button from '../../../components/common/Button';
 import Input from '../../../components/common/Input';
+import Modal from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';
 
 export const AddEditProduct = () => {
@@ -14,12 +25,41 @@ export const AddEditProduct = () => {
   const navigate = useNavigate();
   const toast = useToast();
 
+  const [brandsList, setBrandsList] = useState(BRANDS);
+  const [brandObjects, setBrandObjects] = useState([]);
+  const [showAddBrandModal, setShowAddBrandModal] = useState(false);
+  const [showDeleteBrandModal, setShowDeleteBrandModal] = useState(false);
+  const [selectedBrandToDelete, setSelectedBrandToDelete] = useState('');
+  const [newBrandName, setNewBrandName] = useState('');
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [deletingBrand, setDeletingBrand] = useState(null);
+
+  // Custom downward-opening brand dropdown state
+  const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
+  const [brandSearchQuery, setBrandSearchQuery] = useState('');
+  const brandDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target)) {
+        setBrandDropdownOpen(false);
+      }
+    };
+    if (brandDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [brandDropdownOpen]);
+
   const [formData, setFormData] = useState({
     name: '',
     brand: BRANDS[0],
     petType: 'dog',
     category: 'food',
     lifeStage: 'adult',
+    breedSpecific: 'All Breeds',
     price: 1500,
     originalPrice: 1800,
     stockCount: 20,
@@ -58,6 +98,105 @@ export const AddEditProduct = () => {
       });
     }
   }, [id, isEdit]);
+
+  const fetchBrands = async () => {
+    try {
+      const brands = await brandApi.getBrands();
+      if (Array.isArray(brands) && brands.length > 0) {
+        setBrandObjects(brands);
+        const names = brands.map((b) => (typeof b === 'string' ? b : b.name));
+        setBrandsList(Array.from(new Set([...names, ...BRANDS])));
+      }
+    } catch (err) {
+      console.warn('Could not fetch brands from DB, using defaults:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchBrands();
+  }, []);
+
+  const handlePetTypeChange = (e) => {
+    const newPetType = e.target.value;
+    const stages = getLifeStagesForPet(newPetType);
+    const isCurrentStageValid = stages.some((s) => s.id === formData.lifeStage);
+
+    setFormData((prev) => ({
+      ...prev,
+      petType: newPetType,
+      lifeStage: isCurrentStageValid ? prev.lifeStage : stages[0]?.id || 'all',
+      breedSpecific: 'All Breeds',
+    }));
+  };
+
+  const handleCreateBrand = async (e) => {
+    if (e) e.preventDefault();
+    if (!newBrandName.trim()) {
+      toast.error('Please enter a valid brand name');
+      return;
+    }
+
+    try {
+      setSavingBrand(true);
+      const res = await brandApi.createBrand({
+        name: newBrandName.trim(),
+        petTypes: [formData.petType],
+      });
+
+      const brandName = res?.name || newBrandName.trim();
+      const newDoc = res || { name: brandName, isCustom: true };
+
+      setBrandObjects((prev) => [newDoc, ...prev.filter((b) => (typeof b === 'string' ? b : b.name) !== brandName)]);
+      setBrandsList((prev) => (prev.includes(brandName) ? prev : [brandName, ...prev]));
+      setFormData((prev) => ({ ...prev, brand: brandName }));
+      toast.success(`🎉 Brand "${brandName}" added and saved in database!`);
+      setNewBrandName('');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save brand to database');
+    } finally {
+      setSavingBrand(false);
+    }
+  };
+
+  const dynamicBrandsList = brandObjects.filter((b) => b.isCustom);
+
+  const handleDeleteBrand = async (brandToDelete) => {
+    if (!brandToDelete) return;
+
+    const brandName = typeof brandToDelete === 'string' ? brandToDelete : brandToDelete.name;
+
+    try {
+      setDeletingBrand(brandName);
+      await brandApi.deleteBrand(brandName);
+
+      // Remove from state
+      const nextBrandObjects = brandObjects.filter((b) => (typeof b === 'string' ? b : b.name) !== brandName);
+      const nextBrandsList = brandsList.filter((b) => b !== brandName);
+
+      setBrandObjects(nextBrandObjects);
+      setBrandsList(nextBrandsList);
+
+      // If currently selected brand was deleted, select next remaining
+      if (formData.brand === brandName) {
+        setFormData((prev) => ({ ...prev, brand: nextBrandsList[0] || 'Royal Canin' }));
+      }
+
+      // Update remaining dynamic brands in modal
+      const remainingDynamic = nextBrandObjects.filter((b) => b.isCustom);
+      if (remainingDynamic.length > 0) {
+        setSelectedBrandToDelete(remainingDynamic[0].name);
+      } else {
+        setSelectedBrandToDelete('');
+        setShowDeleteBrandModal(false);
+      }
+
+      toast.success(`🗑️ Brand "${brandName}" deleted successfully from database!`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete brand from database');
+    } finally {
+      setDeletingBrand(null);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -188,6 +327,10 @@ export const AddEditProduct = () => {
     }
   };
 
+  const filteredBrands = brandsList.filter((b) =>
+    b.toLowerCase().includes(brandSearchQuery.toLowerCase())
+  );
+
   return (
     <div className="admin-page-container">
       <div className="admin-page-header">
@@ -205,7 +348,9 @@ export const AddEditProduct = () => {
           {/* Basic Details Card */}
           <div className="admin-card">
             <h3 className="card-section-title">Product Information</h3>
-            <div className="form-grid-2">
+
+            {/* Row 1: Product Name (Full Width) */}
+            <div style={{ marginBottom: '16px' }}>
               <Input
                 label="Product Name"
                 name="name"
@@ -214,36 +359,21 @@ export const AddEditProduct = () => {
                 required
                 placeholder="e.g. Royal Canin Golden Retriever Adult"
               />
-
-              <div className="input-field-group">
-                <label className="input-label">Brand</label>
-                <select
-                  name="brand"
-                  value={formData.brand}
-                  onChange={handleChange}
-                  className="app-input"
-                >
-                  {BRANDS.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
-            <div className="form-grid-3">
+            {/* Row 2: Target Pet & Category */}
+            <div className="form-grid-2" style={{ marginBottom: '16px' }}>
               <div className="input-field-group">
                 <label className="input-label">Target Pet</label>
                 <select
                   name="petType"
                   value={formData.petType}
-                  onChange={handleChange}
+                  onChange={handlePetTypeChange}
                   className="app-input"
                 >
                   {PET_TYPES.filter((p) => p.id !== 'all').map((pt) => (
                     <option key={pt.id} value={pt.id}>
-                      {pt.label}
+                      {pt.icon} {pt.label}
                     </option>
                   ))}
                 </select>
@@ -259,27 +389,455 @@ export const AddEditProduct = () => {
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.label}
+                      {c.icon} {c.label}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
 
+            {/* Row 3: Brand & Life Stage (Brand shifted down and opens downward) */}
+            <div className="form-grid-2" style={{ marginBottom: '16px' }}>
+              {/* Brand Field with Custom Downward-Opening Dropdown */}
+              <div
+                ref={brandDropdownRef}
+                className="input-field-group"
+                style={{ position: 'relative' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="input-label" style={{ margin: 0 }}>Brand</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBrandModal((prev) => !prev)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--color-primary-600, #ea580c)',
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    <Plus size={14} /> Add / Manage Brands
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrandDropdownOpen((prev) => !prev);
+                      setBrandSearchQuery('');
+                    }}
+                    className="app-input"
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      background: '#ffffff',
+                      height: '42px',
+                      padding: '0 12px',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.9rem', color: formData.brand ? '#0f172a' : '#94a3b8', fontWeight: 500 }}>
+                      🏷️ {formData.brand || 'Select a Brand'}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      style={{
+                        color: '#64748b',
+                        transition: 'transform 0.2s',
+                        transform: brandDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      }}
+                    />
+                  </button>
+
+                  {/* Delete icon on right side of brand dropdown */}
+                  <button
+                    type="button"
+                    title="Select and delete added dynamic brands from database"
+                    onClick={() => {
+                      const dynamicList = brandObjects.filter((b) => b.isCustom);
+                      const matching = dynamicList.find((b) => b.name === formData.brand);
+                      setSelectedBrandToDelete(matching ? matching.name : dynamicList[0]?.name || '');
+                      setShowDeleteBrandModal(true);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '8px',
+                      border: '1px solid #fee2e2',
+                      background: '#fff1f2',
+                      color: '#e11d48',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0,
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = '#ffe4e6';
+                      e.currentTarget.style.borderColor = '#fca5a5';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = '#fff1f2';
+                      e.currentTarget.style.borderColor = '#fee2e2';
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+
+                {/* Custom Downward-Opening Dropdown Menu */}
+                {brandDropdownOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: '50px',
+                      background: '#ffffff',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                      boxShadow: '0 12px 28px -4px rgba(0, 0, 0, 0.15), 0 4px 10px -2px rgba(0, 0, 0, 0.05)',
+                      zIndex: 100,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      maxHeight: '260px',
+                      overflow: 'hidden',
+                      animation: 'fadeIn 0.15s ease',
+                    }}
+                  >
+                    {/* Search Bar */}
+                    <div
+                      style={{
+                        padding: '8px 10px',
+                        borderBottom: '1px solid #f1f5f9',
+                        background: '#f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <Search size={14} color="#94a3b8" />
+                      <input
+                        type="text"
+                        value={brandSearchQuery}
+                        onChange={(e) => setBrandSearchQuery(e.target.value)}
+                        placeholder={`Search from ${brandsList.length} brands...`}
+                        autoFocus
+                        style={{
+                          border: 'none',
+                          outline: 'none',
+                          background: 'transparent',
+                          fontSize: '0.85rem',
+                          width: '100%',
+                          color: '#1e293b',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {brandSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setBrandSearchQuery('')}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: '#94a3b8' }}
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Scrollable list strictly with overscroll contain */}
+                    <div
+                      style={{
+                        overflowY: 'auto',
+                        maxHeight: '210px',
+                        padding: '4px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                        overscrollBehavior: 'contain',
+                      }}
+                      onWheel={(e) => {
+                        e.stopPropagation();
+                        const el = e.currentTarget;
+                        const isUp = e.deltaY < 0;
+                        const isDown = e.deltaY > 0;
+                        if ((isUp && el.scrollTop <= 0) || (isDown && el.scrollTop + el.clientHeight >= el.scrollHeight)) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      {filteredBrands.length === 0 ? (
+                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.825rem', color: '#94a3b8' }}>
+                          No brands matching "{brandSearchQuery}"
+                        </div>
+                      ) : (
+                        filteredBrands.map((b) => {
+                          const isSelected = formData.brand === b;
+                          const isCustom = brandObjects.find((doc) => doc.name === b)?.isCustom;
+
+                          return (
+                            <div
+                              key={b}
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, brand: b }));
+                                setBrandDropdownOpen(false);
+                              }}
+                              style={{
+                                padding: '7px 10px',
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: isSelected ? '#ffedd5' : 'transparent',
+                                color: isSelected ? '#c2410c' : '#1e293b',
+                                fontSize: '0.875rem',
+                                fontWeight: isSelected ? 600 : 400,
+                                cursor: 'pointer',
+                                transition: 'background 0.12s ease',
+                              }}
+                              onMouseOver={(e) => {
+                                if (!isSelected) e.currentTarget.style.background = '#f8fafc';
+                              }}
+                              onMouseOut={(e) => {
+                                if (!isSelected) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>🏷️ {b}</span>
+                                {isCustom && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      background: '#dbeafe',
+                                      color: '#1e40af',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Custom
+                                  </span>
+                                )}
+                              </div>
+                              {isSelected && <Check size={15} color="#ea580c" />}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Life Stage */}
               <div className="input-field-group">
-                <label className="input-label">Life Stage</label>
+                <label className="input-label">
+                  Life Stage ({PET_TYPES.find((p) => p.id === formData.petType)?.label || formData.petType})
+                </label>
                 <select
                   name="lifeStage"
                   value={formData.lifeStage}
                   onChange={handleChange}
                   className="app-input"
                 >
-                  {LIFE_STAGES.map((ls) => (
+                  {getLifeStagesForPet(formData.petType).map((ls) => (
                     <option key={ls.id} value={ls.id}>
-                      {ls.label}
+                      {ls.icon ? `${ls.icon} ` : ''}{ls.label}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Quick Add & Manage Brands Inline Card */}
+            {showAddBrandModal && (
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1.5px dashed #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '16px 18px',
+                  marginBottom: '18px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '1.1rem' }}>🏷️</span>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>Add & Manage Brands in Database</strong>
+                      <p style={{ margin: 0, fontSize: '0.775rem', color: '#64748b' }}>
+                        Add new brands or remove added brands from the database using the delete icon (🗑️) on the right side.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBrandModal(false)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={newBrandName}
+                    onChange={(e) => setNewBrandName(e.target.value)}
+                    placeholder="Enter brand name to add (e.g. Taiyo, Vitapol, SmartHeart, Hikari)..."
+                    className="app-input"
+                    style={{ flex: '1 1 240px' }}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCreateBrand();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    loading={savingBrand}
+                    icon={Save}
+                    onClick={handleCreateBrand}
+                  >
+                    Save Brand
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowAddBrandModal(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                {/* Brands List with Delete Icon on the right side */}
+                <div style={{ marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                      📋 Database Brands ({brandsList.length}) - Click 🗑️ on the right to delete from DB:
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: '190px',
+                      overflowY: 'auto',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      background: '#ffffff',
+                      padding: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      overscrollBehavior: 'contain',
+                    }}
+                  >
+                    {brandsList.map((b) => {
+                      const isSelected = formData.brand === b;
+                      const isCustom = brandObjects.find((doc) => doc.name === b)?.isCustom;
+
+                      return (
+                        <div
+                          key={b}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            background: isSelected ? '#fff7ed' : '#f8fafc',
+                            border: isSelected ? '1px solid #fed7aa' : '1px solid transparent',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}
+                            onClick={() => setFormData((prev) => ({ ...prev, brand: b }))}
+                          >
+                            <span style={{ fontSize: '0.875rem', fontWeight: isSelected ? 600 : 500, color: isSelected ? '#c2410c' : '#1e293b' }}>
+                              🏷️ {b}
+                            </span>
+                            {isCustom && (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#dbeafe', color: '#1e40af' }}>
+                                Custom Added
+                              </span>
+                            )}
+                            {isSelected && (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#ffedd5', color: '#c2410c' }}>
+                                Selected
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Delete icon on the right side */}
+                          <button
+                            type="button"
+                            title={`Delete "${b}" from database`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteBrand(b);
+                            }}
+                            disabled={deletingBrand === b}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '4px 6px',
+                              borderRadius: '4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'background 0.15s',
+                            }}
+                            onMouseOver={(e) => (e.currentTarget.style.background = '#fee2e2')}
+                            onMouseOut={(e) => (e.currentTarget.style.background = 'none')}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Row 4: Breed / Species Variety */}
+            <div className="input-field-group" style={{ marginBottom: '16px' }}>
+              <label className="input-label">Breed / Species Variety</label>
+              <input
+                type="text"
+                name="breedSpecific"
+                value={formData.breedSpecific || 'All Breeds'}
+                onChange={handleChange}
+                list="breed-options-list"
+                className="app-input"
+                placeholder="e.g. All Breeds, Cockatiel, Goldfish, Syrian Hamster..."
+              />
+              <datalist id="breed-options-list">
+                {(BREEDS_BY_PET[formData.petType] || []).map((br) => (
+                  <option key={br} value={br} />
+                ))}
+              </datalist>
             </div>
 
             <Input
@@ -637,6 +1195,167 @@ export const AddEditProduct = () => {
           </div>
         </div>
       </form>
+
+      {/* Delete Dynamic Brand Modal */}
+      <Modal
+        isOpen={showDeleteBrandModal}
+        onClose={() => setShowDeleteBrandModal(false)}
+        title="🗑️ Delete Added Brand"
+        subtitle="Select an added dynamic brand from the list below to delete it permanently from the database."
+        size="md"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {dynamicBrandsList.length === 0 ? (
+            <div
+              style={{
+                padding: '36px 16px',
+                textAlign: 'center',
+                background: '#f8fafc',
+                borderRadius: '12px',
+                border: '1.5px dashed #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <div style={{ fontSize: '2.5rem' }}>📭</div>
+              <h4 style={{ margin: 0, fontSize: '1rem', color: '#1e293b', fontWeight: 600 }}>
+                कुनै पनि Dynamic Brand थपिएको छैन (खालि छ)
+              </h4>
+              <p style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#64748b', maxWidth: '340px' }}>
+                There are currently no custom added brands in the database. When you add a brand via "+ Add Brand", it will appear here.
+              </p>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setShowDeleteBrandModal(false)}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="input-field-group">
+                <label className="input-label" style={{ fontWeight: 600 }}>
+                  Select Dynamic Brand to Delete:
+                </label>
+                <select
+                  value={selectedBrandToDelete}
+                  onChange={(e) => setSelectedBrandToDelete(e.target.value)}
+                  className="app-input"
+                  style={{ fontSize: '0.95rem', padding: '10px 12px' }}
+                >
+                  {dynamicBrandsList.map((b) => (
+                    <option key={b._id || b.name} value={b.name}>
+                      🏷️ {b.name} (Added Brand)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fee2e2',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  gap: '10px',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#991b1b', lineHeight: 1.4 }}>
+                  Deleting brand <strong>"{selectedBrandToDelete}"</strong> will permanently remove it from MongoDB and from catalog filters.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setShowDeleteBrandModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="md"
+                  icon={Trash2}
+                  isLoading={deletingBrand === selectedBrandToDelete}
+                  disabled={!selectedBrandToDelete}
+                  onClick={() => handleDeleteBrand(selectedBrandToDelete)}
+                >
+                  Delete Brand
+                </Button>
+              </div>
+
+              {/* Dynamic Brands List */}
+              <div style={{ marginTop: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
+                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '8px' }}>
+                  Added Dynamic Brands ({dynamicBrandsList.length}):
+                </span>
+                <div
+                  style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  {dynamicBrandsList.map((b) => (
+                    <div
+                      key={b._id || b.name}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        background: selectedBrandToDelete === b.name ? '#fee2e2' : '#f8fafc',
+                        border: selectedBrandToDelete === b.name ? '1px solid #fca5a5' : '1px solid #e2e8f0',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => setSelectedBrandToDelete(b.name)}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#1e293b' }}>
+                          🏷️ {b.name}
+                        </span>
+                        {selectedBrandToDelete === b.name && (
+                          <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>
+                            Selected
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        title={`Delete ${b.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteBrand(b.name);
+                        }}
+                        disabled={deletingBrand === b.name}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#e11d48',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
