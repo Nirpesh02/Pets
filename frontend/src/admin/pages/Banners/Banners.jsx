@@ -17,6 +17,7 @@ import {
   Palette,
 } from 'lucide-react';
 import { adminApi } from '../../../api/adminApi';
+import { uploadApi } from '../../../api/uploadApi';
 import Button from '../../../components/common/Button';
 import Input from '../../../components/common/Input';
 import Modal from '../../../components/common/Modal';
@@ -114,6 +115,8 @@ export const Banners = () => {
   const [editingBannerId, setEditingBannerId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showAutoSection, setShowAutoSection] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [isBannerDragging, setIsBannerDragging] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -243,24 +246,66 @@ export const Banners = () => {
     toast.info(`Loaded "${preset.tag}" template into editor!`);
   };
 
-  // Handle local image file upload
-  const handleImageFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Handle local single image file upload (strictly 1 image only)
+  const handleImageFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
+    // Check if multiple images were selected
+    if (files.length > 1) {
+      toast.error('Multi image not support');
+      e.target.value = '';
+      return;
+    }
+
+    const file = files[0];
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file (PNG, JPG, WEBP)');
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      const uploadedUrl = await uploadApi.uploadSingle(file);
+      setFormData((prev) => ({ ...prev, image: uploadedUrl }));
+      toast.success('Banner image uploaded successfully! 🎉');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to upload banner image');
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleBannerDrop = async (e) => {
+    e.preventDefault();
+    setIsBannerDragging(false);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    // Reject multiple images
+    if (files.length > 1) {
+      toast.error('Multi image not support');
+      return;
+    }
+
+    const file = files[0];
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file (PNG, JPG, WEBP)');
       return;
     }
 
-    // Read as Base64 Data URL
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target.result;
-      setFormData((prev) => ({ ...prev, image: dataUrl }));
-      toast.success('Banner image uploaded successfully!');
-    };
-    reader.readAsDataURL(file);
+    try {
+      setUploadingImage(true);
+      const uploadedUrl = await uploadApi.uploadSingle(file);
+      setFormData((prev) => ({ ...prev, image: uploadedUrl }));
+      toast.success('Banner image uploaded successfully! 🎉');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to upload banner image');
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   // Save or update banner
@@ -854,76 +899,166 @@ export const Banners = () => {
           {/* BACKGROUND IMAGE SELECTION */}
           <div style={{ marginTop: '16px', marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
-              🖼️ Background Image (Upload from Computer / Pick Photo / Paste URL):
+              🖼️ Banner Background Image * <span style={{ fontSize: '12px', fontWeight: 400, color: '#6b7280' }}>(Single image upload only)</span>
             </label>
 
-            {/* Upload Button + File Input */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleImageFileUpload}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
+            {/* Hidden Single/Multi file Input (multiple enabled to intercept multi-selection) */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleImageFileUpload}
+              disabled={uploadingImage}
+            />
+
+            {/* Single Image Upload Dropzone */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsBannerDragging(true);
+              }}
+              onDragLeave={() => setIsBannerDragging(false)}
+              onDrop={handleBannerDrop}
+              style={{
+                border: isBannerDragging ? '2px dashed #ea580c' : '2px dashed #cbd5e1',
+                backgroundColor: isBannerDragging ? '#fff7ed' : '#f8fafc',
+                borderRadius: '12px',
+                padding: '20px 16px',
+                textAlign: 'center',
+                cursor: uploadingImage ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                marginBottom: '12px',
+              }}
+            >
+              <div
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  background: '#f3f4f6',
-                  border: '1px solid #d1d5db',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#374151',
-                  cursor: 'pointer',
+                  justifyContent: 'center',
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  background: '#ffedd5',
+                  color: '#ea580c',
+                  marginBottom: '6px',
                 }}
               >
-                <Upload size={15} /> Upload Photo from Computer / Phone
-              </button>
-              <span style={{ fontSize: '12px', color: '#6b7280' }}>or choose from curated gallery below</span>
+                <Upload size={20} />
+              </div>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '3px' }}>
+                {uploadingImage ? 'Uploading banner image to server...' : 'Click to Upload Banner Image or Drag & Drop'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                PNG, JPG, JPEG, WEBP • <strong>Single image only</strong>
+              </div>
             </div>
 
-            {/* Curated Gallery Thumbnails */}
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '6px', marginBottom: '10px' }}>
-              {CURATED_IMAGES.map((img) => (
-                <button
-                  key={img.label}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, image: img.url })}
+            {/* Current Selected Image View */}
+            {formData.image && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '10px 12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                }}
+              >
+                <img
+                  src={formData.image}
+                  alt="Banner preview"
                   style={{
-                    border: formData.image === img.url ? '2px solid #eb5e28' : '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    padding: '2px',
-                    background: '#ffffff',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    textAlign: 'center',
+                    width: '68px',
+                    height: '44px',
+                    objectFit: 'cover',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
                   }}
-                  title={img.label}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
+                    Selected Banner Photo
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.72rem',
+                      color: '#64748b',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {formData.image}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: '#334155',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <img
-                    src={img.url}
-                    alt={img.label}
-                    style={{ width: '64px', height: '44px', objectFit: 'cover', borderRadius: '6px', display: 'block' }}
-                  />
-                  <span style={{ fontSize: '10px', color: '#6b7280', display: 'block', maxWidth: '64px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {img.label}
-                  </span>
+                  Change Photo
                 </button>
-              ))}
-            </div>
+              </div>
+            )}
 
-            {/* Image URL Input */}
-            <Input
-              value={formData.image}
-              onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-              placeholder="https://images.unsplash.com/..."
-            />
+            {/* Curated Gallery Thumbnails Option */}
+            <div style={{ marginTop: '6px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 600 }}>
+                Or select from high-resolution pet presets:
+              </span>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  paddingTop: '6px',
+                  paddingBottom: '4px',
+                }}
+              >
+                {CURATED_IMAGES.map((img) => (
+                  <button
+                    key={img.label}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, image: img.url })}
+                    style={{
+                      border: formData.image === img.url ? '2px solid #ea580c' : '1px solid #d1d5db',
+                      borderRadius: '8px',
+                      padding: '2px',
+                      background: '#ffffff',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      textAlign: 'center',
+                    }}
+                    title={img.label}
+                  >
+                    <img
+                      src={img.url}
+                      alt={img.label}
+                      style={{ width: '56px', height: '36px', objectFit: 'cover', borderRadius: '5px', display: 'block' }}
+                    />
+                    <span style={{ fontSize: '9.5px', color: '#6b7280', display: 'block', maxWidth: '56px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {img.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* GRADIENT OVERLAY SELECTION */}

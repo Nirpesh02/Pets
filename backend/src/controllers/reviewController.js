@@ -64,10 +64,17 @@ export const getProductReviews = async (req, res, next) => {
       avgRating = Number((sum / totalReviews).toFixed(1));
     }
 
+    const formattedReviews = reviews.map((r) => {
+      const obj = r.toObject ? r.toObject() : { ...r };
+      if (r.user?.avatar) obj.userAvatar = r.user.avatar;
+      if (r.user?.name) obj.userName = r.user.name;
+      return obj;
+    });
+
     return sendSuccess(
       res,
       {
-        reviews,
+        reviews: formattedReviews,
         totalReviews,
         avgRating,
         distribution,
@@ -91,11 +98,18 @@ export const getFeaturedHomeReviews = async (req, res, next) => {
       .populate('user', 'name avatar')
       .sort({ updatedAt: -1 });
 
+    const formattedReviews = reviews.map((r) => {
+      const obj = r.toObject ? r.toObject() : { ...r };
+      if (r.user?.avatar) obj.userAvatar = r.user.avatar;
+      if (r.user?.name) obj.userName = r.user.name;
+      return obj;
+    });
+
     return sendSuccess(
       res,
       {
-        reviews,
-        count: reviews.length,
+        reviews: formattedReviews,
+        count: formattedReviews.length,
       },
       'Featured client-side reviews fetched'
     );
@@ -225,6 +239,26 @@ export const getAllReviewsAdmin = async (req, res, next) => {
       .populate('product', 'name images brand price')
       .populate('user', 'name email avatar phone')
       .sort({ createdAt: -1 });
+
+    // Format reviews to ensure they always reflect the user's latest avatar and name
+    reviews = reviews.map((r) => {
+      const obj = r.toObject ? r.toObject() : { ...r };
+      if (r.user?.avatar) obj.userAvatar = r.user.avatar;
+      if (r.user?.name) obj.userName = r.user.name;
+      return obj;
+    });
+
+    // Auto-sync in background so Review collection itself stays up-to-date
+    for (const r of reviews) {
+      if (r.user && (r.user.avatar || r.user.name)) {
+        Review.findByIdAndUpdate(r._id, {
+          $set: {
+            ...(r.user.avatar ? { userAvatar: r.user.avatar } : {}),
+            ...(r.user.name ? { userName: r.user.name } : {}),
+          },
+        }).catch(() => {});
+      }
+    }
 
     if (search && search.trim()) {
       const q = search.trim().toLowerCase();

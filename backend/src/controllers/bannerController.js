@@ -1,4 +1,7 @@
 import Banner from '../models/Banner.js';
+import User from '../models/User.js';
+import Subscriber from '../models/Subscriber.js';
+import jwt from 'jsonwebtoken';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 import { SEED_DOG_BANNER_IMAGES } from '../constants/dogBannerPresets.js';
 
@@ -12,7 +15,7 @@ export const getDogImages = async (req, res, next) => {
   }
 };
 
-// @desc    Get all active banners for homepage (Hides normal banners when exclusive flash banner is active)
+// @desc    Get active banners for homepage (Exclusive flash banner shown ONLY to targeted customer)
 // @route   GET /api/v1/banners
 export const getBanners = async (req, res, next) => {
   try {
@@ -24,27 +27,74 @@ export const getBanners = async (req, res, next) => {
       { $set: { active: false } }
     );
 
-    // 2. Check if an active exclusive coupon banner is active
-    const activeExclusiveBanner = await Banner.findOne({
-      isExclusive: true,
-      active: true,
-      expiresAt: { $gt: now },
-    }).sort('-createdAt');
+    // 2. Identify current customer email from query param or Authorization header
+    let userEmail = (req.query.email || '').trim().toLowerCase();
 
-    // If an exclusive banner is active, return ONLY that banner!
-    if (activeExclusiveBanner) {
+    if (!userEmail && req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded?.id) {
+          const u = await User.findById(decoded.id);
+          if (u?.email) userEmail = u.email.trim().toLowerCase();
+        }
+      } catch {}
+    }
+
+    // 3. Check if an active exclusive coupon banner exists specifically for THIS customer
+    let targetedExclusiveBanner = null;
+
+    if (userEmail) {
+      const activeExclusiveBanners = await Banner.find({
+        isExclusive: true,
+        active: true,
+        expiresAt: { $gt: now },
+      }).sort('-createdAt');
+
+      for (const b of activeExclusiveBanners) {
+        // Direct match on targetEmail
+        if (b.targetEmail && b.targetEmail.toLowerCase() === userEmail) {
+          targetedExclusiveBanner = b;
+          break;
+        }
+        // Match in targetEmails list
+        if (
+          Array.isArray(b.targetEmails) &&
+          b.targetEmails.map((e) => e.toLowerCase()).includes(userEmail)
+        ) {
+          targetedExclusiveBanner = b;
+          break;
+        }
+        // Match via Subscriber collection by couponCode (backward compatibility)
+        if (b.couponCode) {
+          const sub = await Subscriber.findOne({
+            couponCode: b.couponCode.trim().toUpperCase(),
+            email: userEmail,
+            status: 'approved',
+          });
+          if (sub) {
+            targetedExclusiveBanner = b;
+            Banner.findByIdAndUpdate(b._id, { $set: { targetEmail: userEmail } }).catch(() => {});
+            break;
+          }
+        }
+      }
+    }
+
+    // If an exclusive banner is active FOR THIS TARGET CUSTOMER, show their exclusive banner
+    if (targetedExclusiveBanner) {
       return sendSuccess(
         res,
         {
-          banners: [activeExclusiveBanner],
+          banners: [targetedExclusiveBanner],
           isExclusiveActive: true,
-          exclusiveBanner: activeExclusiveBanner,
+          exclusiveBanner: targetedExclusiveBanner,
         },
-        'Exclusive flash banner active'
+        'Targeted exclusive flash banner active for customer'
       );
     }
 
-    // 3. Otherwise return all standard active banners
+    // 4. Otherwise (for all other customers or non-logged-in visitors), return standard active banners!
     const banners = await Banner.find({
       active: true,
       isExclusive: { $ne: true },
@@ -79,11 +129,14 @@ export const getAllBanners = async (req, res, next) => {
 export const createBanner = async (req, res, next) => {
   try {
     if (req.body.isExclusive) {
-      // Deactivate older exclusive banners so new flash deal takes exclusive priority
-      await Banner.updateMany(
-        { isExclusive: true, active: true },
-        { $set: { active: false } }
-      );
+      const target = (req.body.targetEmail || '').trim().toLowerCase();
+      if (target) {
+        // Deactivate older exclusive banners specifically for this customer
+        await Banner.updateMany(
+          { isExclusive: true, targetEmail: target, active: true },
+          { $set: { active: false } }
+        );
+      }
     }
 
     const banner = await Banner.create(req.body);

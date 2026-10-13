@@ -24,6 +24,7 @@ import { CATEGORIES, PET_TYPES } from '../../utils/constants';
 import { formatNPR, getExpiryStatus } from '../../utils/formatters';
 import { useCart } from '../../hooks/useCart';
 import { usePet } from '../../hooks/usePet';
+import { useAuth } from '../../hooks/useAuth';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import Loader from '../../components/common/Loader';
@@ -40,24 +41,25 @@ export const Home = () => {
 
   const { addToCart } = useCart();
   const { activePet } = usePet();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const loadBanners = useCallback(async () => {
     try {
-      const bannersData = await adminApi.getBanners();
+      const bannersData = await adminApi.getBanners(user?.email);
       const activeBanners = bannersData.filter((b) => b.active);
       setBanners(activeBanners.length > 0 ? activeBanners : bannersData);
       setActiveBannerIndex(0);
     } catch (err) {
       console.warn('Failed to load banners:', err);
     }
-  }, []);
+  }, [user?.email]);
 
   const loadHomeData = useCallback(async () => {
     try {
       setLoading(true);
       const [bannersData, prodsData, reviewsData] = await Promise.all([
-        adminApi.getBanners(),
+        adminApi.getBanners(user?.email),
         productApi.getFeaturedProducts(),
         reviewApi.getFeaturedReviews(),
       ]);
@@ -68,7 +70,7 @@ export const Home = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.email]);
 
   useEffect(() => {
     loadHomeData();
@@ -530,10 +532,10 @@ export const Home = () => {
                   </p>
                   <div className="testimonial-author">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {rev.userAvatar ? (
+                      {(rev.user?.avatar || rev.userAvatar) ? (
                         <img
-                          src={rev.userAvatar}
-                          alt={rev.userName}
+                          src={rev.user?.avatar || rev.userAvatar}
+                          alt={rev.user?.name || rev.userName}
                           style={{
                             width: '38px',
                             height: '38px',
@@ -541,27 +543,33 @@ export const Home = () => {
                             objectFit: 'cover',
                             border: '2px solid #fdba74',
                           }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: '50%',
-                            backgroundColor: '#ffedd5',
-                            color: '#ea580c',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 700,
-                            fontSize: '0.95rem',
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling;
+                            if (fallback) fallback.style.display = 'flex';
                           }}
-                        >
-                          {rev.userName ? rev.userName.charAt(0).toUpperCase() : 'P'}
-                        </div>
-                      )}
+                        />
+                      ) : null}
+                      <div
+                        style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '50%',
+                          backgroundColor: '#ffedd5',
+                          color: '#ea580c',
+                          display: (rev.user?.avatar || rev.userAvatar) ? 'none' : 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: '0.95rem',
+                        }}
+                      >
+                        {(rev.user?.name || rev.userName)
+                          ? (rev.user?.name || rev.userName).charAt(0).toUpperCase()
+                          : 'P'}
+                      </div>
                       <div>
-                        <strong>{rev.userName}</strong>
+                        <strong>{rev.user?.name || rev.userName}</strong>
                         <span style={{ display: 'block', fontSize: '0.82rem', color: '#64748b' }}>
                           {rev.petInfo || (rev.product?.name ? `Purchased: ${rev.product.name}` : 'Verified Pet Parent in Nepal 🐾')}
                         </span>

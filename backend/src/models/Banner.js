@@ -54,6 +54,16 @@ const bannerSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    targetEmail: {
+      type: String,
+      default: null,
+      lowercase: true,
+      trim: true,
+    },
+    targetEmails: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

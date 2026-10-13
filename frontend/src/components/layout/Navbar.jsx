@@ -49,8 +49,8 @@ export const Navbar = () => {
             <span>Kathmandu Valley Same-Day Delivery Inside Ring Road (eSewa & COD Available)</span>
           </div>
           <div className="top-banner-right">
-            <span>📞 Hotline: +977 9800000001</span>
-            <span style={{ opacity: 0.4, margin: '0 8px' }}>•</span>
+            <span>📞 Hotline: +977 9816988657</span>
+            <span className='live-pulse' style={{ opacity: 1, margin: '0 8px' }}></span>
             <span>🐾 Vet-Approved Care</span>
           </div>
         </div>

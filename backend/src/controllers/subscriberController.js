@@ -135,7 +135,7 @@ export const approveSubscriber = async (req, res, next) => {
         $or: [
           ...(previousCode ? [{ couponCode: previousCode }] : []),
           { couponCode: finalCode },
-          { isExclusive: true, active: true },
+          { targetEmail: subscriber.email.trim().toLowerCase() },
         ],
       },
       {
@@ -144,6 +144,7 @@ export const approveSubscriber = async (req, res, next) => {
           discountPercent: finalDiscount,
           expiresAt: finalExpiresAt,
           active: isBannerActive,
+          targetEmail: subscriber.email.trim().toLowerCase(),
           title: `Exclusive Flash Deal: ${finalDiscount}% OFF! 🔥`,
           subtitle: `Use voucher code "${finalCode}" at checkout to get instant ${finalDiscount}% discount on all pet food & grooming essentials!`,
           badge: `⚡ FLASH DEAL • ${finalDiscount}% OFF`,
@@ -203,11 +204,15 @@ export const bulkApproveSubscribers = async (req, res, next) => {
 
     // Automatically sync active Homepage Exclusive Flash Banner if present
     const isBannerActive = new Date(finalExpiresAt) > new Date();
+    const targetEmailList = (ids || []).length > 0
+      ? (await Subscriber.find({ _id: { $in: ids } })).map((s) => s.email.trim().toLowerCase())
+      : [];
+
     await Banner.updateMany(
       {
         $or: [
           { couponCode: finalCode },
-          { isExclusive: true, active: true },
+          { targetEmail: { $in: targetEmailList } },
         ],
       },
       {
@@ -216,6 +221,8 @@ export const bulkApproveSubscribers = async (req, res, next) => {
           discountPercent: finalDiscount,
           expiresAt: finalExpiresAt,
           active: isBannerActive,
+          targetEmail: targetEmailList[0] || null,
+          targetEmails: targetEmailList,
           title: `Exclusive Flash Deal: ${finalDiscount}% OFF! 🔥`,
           subtitle: `Use voucher code "${finalCode}" at checkout to get instant ${finalDiscount}% discount on all pet food & grooming essentials!`,
           badge: `⚡ FLASH DEAL • ${finalDiscount}% OFF`,

@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import Review from '../models/Review.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 
 export const isSuperAdminAccount = (u) =>
@@ -196,6 +197,21 @@ export const updateProfile = async (req, res, next) => {
 
     await user.save();
 
+    // Synchronize review author name and avatar across all existing reviews by this user
+    try {
+      const reviewUpdates = {};
+      if (name) reviewUpdates.userName = user.name;
+      if (avatar) reviewUpdates.userAvatar = user.avatar;
+      if (Object.keys(reviewUpdates).length > 0) {
+        await Review.updateMany(
+          { user: user._id },
+          { $set: reviewUpdates }
+        );
+      }
+    } catch (syncErr) {
+      console.error('Failed to sync updated profile with reviews:', syncErr);
+    }
+
     const isSuper = isSuperAdminAccount(user);
     const token = user.getSignedJwtToken();
 
@@ -236,6 +252,16 @@ export const uploadAvatar = async (req, res, next) => {
       { avatar: avatarUrl },
       { new: true }
     );
+
+    // Keep all past reviews written by this user up to date with their new avatar
+    try {
+      await Review.updateMany(
+        { user: req.user.id },
+        { $set: { userAvatar: avatarUrl } }
+      );
+    } catch (syncErr) {
+      console.error('Failed to sync avatar with reviews:', syncErr);
+    }
 
     const isSuper = isSuperAdminAccount(user);
 

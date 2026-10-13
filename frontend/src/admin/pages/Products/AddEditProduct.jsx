@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Upload, X, Check, Image as ImageIcon } from 'lucide-react';
 import { productApi } from '../../../api/productApi';
+import { uploadApi } from '../../../api/uploadApi';
 import { CATEGORIES, BRANDS, PET_TYPES, LIFE_STAGES, DIETARY_REQUIREMENTS } from '../../../utils/constants';
 import Button from '../../../components/common/Button';
 import Input from '../../../components/common/Input';
@@ -26,7 +27,7 @@ export const AddEditProduct = () => {
     expiryDate: '2027-06-30',
     shortDesc: '',
     description: '',
-    imageUrl: 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80',
+    images: ['https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80'],
     dietaryTags: ['High-Protein'],
     variants: [{ weight: '1 kg', price: 1500, stock: 20 }],
     isFeatured: false,
@@ -34,14 +35,23 @@ export const AddEditProduct = () => {
   });
 
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (isEdit) {
       productApi.getProductById(id).then((prod) => {
         if (prod) {
+          const loadedImages = Array.isArray(prod.images) && prod.images.length > 0
+            ? prod.images
+            : prod.imageUrl
+            ? [prod.imageUrl]
+            : [];
+
           setFormData({
             ...prod,
-            imageUrl: prod.images?.[0] || '',
+            images: loadedImages,
             variants: prod.variants?.length ? prod.variants : [{ weight: 'Standard', price: prod.price, stock: prod.stockCount }],
           });
         }
@@ -91,8 +101,68 @@ export const AddEditProduct = () => {
     });
   };
 
+  const handleFilesUpload = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    const validFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (validFiles.length === 0) {
+      toast.error('Please select valid image files (PNG, JPG, WEBP)');
+      return;
+    }
+
+    try {
+      setUploadingImages(true);
+      const uploadedUrls = await uploadApi.uploadMultiple(validFiles);
+      setFormData((prev) => ({
+        ...prev,
+        images: [...(prev.images || []), ...uploadedUrls],
+      }));
+      toast.success(`🎉 ${uploadedUrls.length} product image(s) uploaded successfully!`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to upload image files.');
+    } finally {
+      setUploadingImages(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleProductFileInputChange = (e) => {
+    handleFilesUpload(e.target.files);
+  };
+
+  const handleProductDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesUpload(e.dataTransfer.files);
+    }
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      images: (prev.images || []).filter((_, idx) => idx !== indexToRemove),
+    }));
+    toast.info('Image removed from product gallery.');
+  };
+
+  const handleSetAsCover = (index) => {
+    setFormData((prev) => {
+      const currentList = [...(prev.images || [])];
+      const [chosen] = currentList.splice(index, 1);
+      return { ...prev, images: [chosen, ...currentList] };
+    });
+    toast.success('Cover photo updated! 🌟');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.images || formData.images.length === 0) {
+      toast.error('Please upload at least 1 image for the product.');
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -100,7 +170,7 @@ export const AddEditProduct = () => {
         price: Number(formData.price),
         originalPrice: Number(formData.originalPrice),
         stockCount: Number(formData.stockCount),
-        images: [formData.imageUrl],
+        images: formData.images,
       };
 
       if (isEdit) {
@@ -333,18 +403,201 @@ export const AddEditProduct = () => {
           {/* Pricing & Media Card */}
           <div className="admin-card">
             <h3 className="card-section-title">Media & Display</h3>
-            <Input
-              label="Product Image URL"
-              name="imageUrl"
-              value={formData.imageUrl}
-              onChange={handleChange}
-              placeholder="https://..."
-              prefixIcon={ImageIcon}
+
+            {/* Hidden Multi-file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleProductFileInputChange}
+              disabled={uploadingImages}
             />
 
-            {formData.imageUrl && (
-              <div className="image-preview-box">
-                <img src={formData.imageUrl} alt="Preview" className="image-preview" />
+            {/* Upload Dropzone */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleProductDrop}
+              style={{
+                border: isDragging ? '2px dashed #ea580c' : '2px dashed #cbd5e1',
+                backgroundColor: isDragging ? '#fff7ed' : '#f8fafc',
+                borderRadius: '12px',
+                padding: '24px 16px',
+                textAlign: 'center',
+                cursor: uploadingImages ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                marginBottom: '16px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  background: '#ffedd5',
+                  color: '#ea580c',
+                  marginBottom: '8px',
+                }}
+              >
+                <Upload size={22} />
+              </div>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1e293b', marginBottom: '4px' }}>
+                {uploadingImages ? 'Uploading images to server...' : 'Click or Drag & Drop to upload images'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                PNG, JPG, JPEG, WEBP • Multiple image selection supported 📸
+              </div>
+            </div>
+
+            {/* Multiple Images Preview Grid with Cross (X) icon */}
+            {formData.images?.length > 0 ? (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>
+                    Uploaded Images ({formData.images.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#ea580c',
+                      fontWeight: 600,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Plus size={14} /> Add More
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(95px, 1fr))',
+                    gap: '10px',
+                  }}
+                >
+                  {formData.images.map((imgUrl, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        position: 'relative',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        border: idx === 0 ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                        aspectRatio: '1',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.06)',
+                        backgroundColor: '#f1f5f9',
+                      }}
+                    >
+                      <img
+                        src={imgUrl}
+                        alt={`Product image ${idx + 1}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          display: 'block',
+                        }}
+                      />
+
+                      {/* Cross (X) Delete Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveImage(idx);
+                        }}
+                        title="Delete this image"
+                        style={{
+                          position: 'absolute',
+                          top: '5px',
+                          right: '5px',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: '#ef4444',
+                          color: '#ffffff',
+                          border: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                          transition: 'transform 0.15s',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.15)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                      >
+                        <X size={14} strokeWidth={2.6} />
+                      </button>
+
+                      {/* Main Cover Tag or Set Cover Button */}
+                      {idx === 0 ? (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: '0',
+                            left: '0',
+                            right: '0',
+                            background: 'rgba(234, 88, 12, 0.92)',
+                            color: '#ffffff',
+                            fontSize: '0.64rem',
+                            fontWeight: 700,
+                            textAlign: 'center',
+                            padding: '3px 0',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          ★ Cover
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetAsCover(idx);
+                          }}
+                          title="Set as main cover image"
+                          style={{
+                            position: 'absolute',
+                            bottom: '0',
+                            left: '0',
+                            right: '0',
+                            background: 'rgba(15, 23, 42, 0.75)',
+                            color: '#ffffff',
+                            fontSize: '0.62rem',
+                            fontWeight: 600,
+                            textAlign: 'center',
+                            padding: '3px 0',
+                            border: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Set Cover
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic', marginBottom: '14px' }}>
+                No images uploaded yet. Upload at least 1 image.
               </div>
             )}
 

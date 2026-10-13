@@ -57,9 +57,11 @@ export const adminApi = {
     }
   },
 
-  async getBanners() {
+  async getBanners(email) {
     try {
-      const response = await axiosClient.get('/banners');
+      const response = await axiosClient.get('/banners', {
+        params: email ? { email } : {},
+      });
       return response.data?.banners || response.banners || [];
     } catch (error) {
       console.warn('Backend API /banners error:', error.message);

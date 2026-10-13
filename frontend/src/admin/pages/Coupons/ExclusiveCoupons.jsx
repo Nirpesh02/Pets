@@ -391,6 +391,7 @@ export const ExclusiveCoupons = () => {
         couponCode: bannerSub.couponCode,
         discountPercent: bannerSub.discountPercent || 15,
         expiresAt: bannerSub.expiresAt,
+        targetEmail: (bannerSub.email || '').trim().toLowerCase(),
       });
 
       // Update activeBanners and sessionStorage cache so button disables immediately

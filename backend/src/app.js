@@ -14,6 +14,7 @@ import bannerRoutes from './routes/bannerRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import subscriberRoutes from './routes/subscriberRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
+import uploadRoutes from './routes/uploadRoutes.js';
 
 // Middlewares
 import errorHandler from './middlewares/errorHandler.js';
@@ -60,6 +61,7 @@ app.use('/api/v1/banners', bannerRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/subscribers', subscriberRoutes);
 app.use('/api/v1/reviews', reviewRoutes);
+app.use('/api/v1/upload', uploadRoutes);
 
 // Root route
 app.get('/', (req, res) => {

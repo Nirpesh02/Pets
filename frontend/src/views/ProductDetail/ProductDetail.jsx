@@ -648,20 +648,27 @@ export const ProductDetail = () => {
                   <div key={revId} className="single-review-card">
                     <div className="review-card-header">
                       <div className="review-author-meta">
-                        {rev.userAvatar ? (
+                        {(rev.user?.avatar || rev.userAvatar) ? (
                           <img
-                            src={rev.userAvatar}
-                            alt={rev.userName}
+                            src={rev.user?.avatar || rev.userAvatar}
+                            alt={rev.user?.name || rev.userName}
                             className="review-avatar"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.nextElementSibling;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="review-avatar-placeholder">
-                            {rev.userName ? rev.userName.charAt(0).toUpperCase() : 'P'}
-                          </div>
-                        )}
+                        ) : null}
+                        <div
+                          className="review-avatar-placeholder"
+                          style={{ display: (rev.user?.avatar || rev.userAvatar) ? 'none' : 'flex' }}
+                        >
+                          {(rev.user?.name || rev.userName) ? (rev.user?.name || rev.userName).charAt(0).toUpperCase() : 'P'}
+                        </div>
                         <div>
                           <div className="review-author-name-row">
-                            <strong>{rev.userName}</strong>
+                            <strong>{rev.user?.name || rev.userName}</strong>
                             <span className="verified-buyer-badge">
                               <ShieldCheck size={12} /> Verified Pet Parent
                             </span>

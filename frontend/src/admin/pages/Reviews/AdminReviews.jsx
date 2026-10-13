@@ -93,10 +93,10 @@ export const AdminReviews = () => {
 
       if (willBeFeatured) {
         toast.success(
-          `🌟 Review by "${review.userName}" is now LIVE on the client-side homepage under "Loved by 4,000+ Pet Parents in Nepal"!`
+          `🌟 Review by "${review.user?.name || review.userName}" is now LIVE on the client-side homepage under "Loved by 4,000+ Pet Parents in Nepal"!`
         );
       } else {
-        toast.info(`Review by "${review.userName}" removed from the storefront homepage.`);
+        toast.info(`Review by "${review.user?.name || review.userName}" removed from the storefront homepage.`);
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update review status');
@@ -109,7 +109,7 @@ export const AdminReviews = () => {
     const revId = review._id || review.id;
     if (
       !window.confirm(
-        `Are you sure you want to permanently delete the review by "${review.userName}"?`
+        `Are you sure you want to permanently delete the review by "${review.user?.name || review.userName}"?`
       )
     ) {
       return;
@@ -510,10 +510,10 @@ export const AdminReviews = () => {
                       {/* Reviewer Details */}
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          {rev.userAvatar ? (
+                          {(rev.user?.avatar || rev.userAvatar) ? (
                             <img
-                              src={rev.userAvatar}
-                              alt={rev.userName}
+                              src={rev.user?.avatar || rev.userAvatar}
+                              alt={rev.user?.name || rev.userName}
                               style={{
                                 width: '38px',
                                 height: '38px',
@@ -521,28 +521,34 @@ export const AdminReviews = () => {
                                 objectFit: 'cover',
                                 border: '2px solid #fed7aa',
                               }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                width: '38px',
-                                height: '38px',
-                                borderRadius: '50%',
-                                backgroundColor: '#ffedd5',
-                                color: '#ea580c',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 700,
-                                fontSize: '0.9rem',
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                const fallback = e.currentTarget.nextElementSibling;
+                                if (fallback) fallback.style.display = 'flex';
                               }}
-                            >
-                              {rev.userName ? rev.userName.charAt(0).toUpperCase() : 'U'}
-                            </div>
-                          )}
+                            />
+                          ) : null}
+                          <div
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '50%',
+                              backgroundColor: '#ffedd5',
+                              color: '#ea580c',
+                              display: (rev.user?.avatar || rev.userAvatar) ? 'none' : 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            {(rev.user?.name || rev.userName)
+                              ? (rev.user?.name || rev.userName).charAt(0).toUpperCase()
+                              : 'U'}
+                          </div>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>
-                              {rev.userName}
+                              {rev.user?.name || rev.userName}
                             </div>
                             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
                               {rev.user?.email || 'Registered Customer'}
