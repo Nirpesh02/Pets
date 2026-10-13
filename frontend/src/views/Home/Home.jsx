@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { productApi } from '../../api/productApi';
 import { adminApi } from '../../api/adminApi';
+import { reviewApi } from '../../api/reviewApi';
 import { CATEGORIES, PET_TYPES } from '../../utils/constants';
 import { formatNPR, getExpiryStatus } from '../../utils/formatters';
 import { useCart } from '../../hooks/useCart';
@@ -31,6 +32,7 @@ export const Home = () => {
   const [banners, setBanners] = useState([]);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [featuredReviews, setFeaturedReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [copiedCoupon, setCopiedCoupon] = useState(false);
@@ -54,13 +56,15 @@ export const Home = () => {
   const loadHomeData = useCallback(async () => {
     try {
       setLoading(true);
-      const [bannersData, prodsData] = await Promise.all([
+      const [bannersData, prodsData, reviewsData] = await Promise.all([
         adminApi.getBanners(),
         productApi.getFeaturedProducts(),
+        reviewApi.getFeaturedReviews(),
       ]);
       const activeBanners = bannersData.filter((b) => b.active);
       setBanners(activeBanners.length > 0 ? activeBanners : bannersData);
       setFeaturedProducts(prodsData);
+      setFeaturedReviews(reviewsData);
     } finally {
       setLoading(false);
     }
@@ -512,41 +516,84 @@ export const Home = () => {
         </div>
 
         <div className="testimonials-grid">
-          <div className="testimonial-card">
-            <div className="testimonial-stars">★★★★★</div>
-            <p className="testimonial-text">
-              "Ordering Royal Canin for my Golden Retriever in Baluwatar used to take 2-3 days.
-              PawNepal delivered it within 4 hours, and the expiry was 18 months away! Highly recommended."
-            </p>
-            <div className="testimonial-author">
-              <strong>Sujan Bajracharya</strong>
-              <span>Kathmandu • Dog Parent to Bruno 🐕</span>
+          {featuredReviews && featuredReviews.length > 0 ? (
+            featuredReviews.map((rev) => {
+              const starsCount = Math.min(5, Math.max(1, Math.round(rev.rating || 5)));
+              return (
+                <div key={rev._id || rev.id} className="testimonial-card">
+                  <div className="testimonial-stars">
+                    {'★'.repeat(starsCount)}
+                    {'☆'.repeat(5 - starsCount)}
+                  </div>
+                  <p className="testimonial-text">
+                    "{rev.comment}"
+                  </p>
+                  <div className="testimonial-author">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {rev.userAvatar ? (
+                        <img
+                          src={rev.userAvatar}
+                          alt={rev.userName}
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: '2px solid #fdba74',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius: '50%',
+                            backgroundColor: '#ffedd5',
+                            color: '#ea580c',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '0.95rem',
+                          }}
+                        >
+                          {rev.userName ? rev.userName.charAt(0).toUpperCase() : 'P'}
+                        </div>
+                      )}
+                      <div>
+                        <strong>{rev.userName}</strong>
+                        <span style={{ display: 'block', fontSize: '0.82rem', color: '#64748b' }}>
+                          {rev.petInfo || (rev.product?.name ? `Purchased: ${rev.product.name}` : 'Verified Pet Parent in Nepal 🐾')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                textAlign: 'center',
+                padding: '42px 20px',
+                background: 'rgba(255, 247, 237, 0.7)',
+                borderRadius: '16px',
+                border: '1.5px dashed #fed7aa',
+              }}
+            >
+              <PawPrint size={36} style={{ color: '#ea580c', margin: '0 auto 12px' }} />
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e293b', marginBottom: '6px' }}>
+                Authentic Pet Parent Reviews
+              </h3>
+              <p style={{ color: '#64748b', fontSize: '0.92rem', maxWidth: '480px', margin: '0 auto 16px' }}>
+                Real experiences from pet owners will appear here once selected by our admin team. Check out our products to leave your feedback!
+              </p>
+              <Link to="/shop">
+                <Button variant="outline" size="sm">Explore Products</Button>
+              </Link>
             </div>
-          </div>
-
-          <div className="testimonial-card">
-            <div className="testimonial-stars">★★★★★</div>
-            <p className="testimonial-text">
-              "The personalized pet diet feature helped me find hypoallergenic cat food for my Persian cat Luna.
-              eSewa payment was seamless and hassle-free."
-            </p>
-            <div className="testimonial-author">
-              <strong>Shradha Adhikari</strong>
-              <span>Jhamsikhel, Lalitpur • Cat Parent to Luna 🐈</span>
-            </div>
-          </div>
-
-          <div className="testimonial-card">
-            <div className="testimonial-stars">★★★★★</div>
-            <p className="testimonial-text">
-              "Shipped all the way to Pokhara Lakeside in 2 days. The herbal tick shampoo and dental bones
-              arrived in perfect bubble wrapping with a tax invoice."
-            </p>
-            <div className="testimonial-author">
-              <strong>Prashant Gurung</strong>
-              <span>Pokhara • Dog Parent to Rocky 🐕</span>
-            </div>
-          </div>
+          )}
         </div>
       </section>
     </div>

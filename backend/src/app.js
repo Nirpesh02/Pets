@@ -13,6 +13,7 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import bannerRoutes from './routes/bannerRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import subscriberRoutes from './routes/subscriberRoutes.js';
+import reviewRoutes from './routes/reviewRoutes.js';
 
 // Middlewares
 import errorHandler from './middlewares/errorHandler.js';
@@ -58,6 +59,7 @@ app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/banners', bannerRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/subscribers', subscriberRoutes);
+app.use('/api/v1/reviews', reviewRoutes);
 
 // Root route
 app.get('/', (req, res) => {

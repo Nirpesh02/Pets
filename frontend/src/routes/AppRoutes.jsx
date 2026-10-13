@@ -33,6 +33,7 @@ import Inventory from '../admin/pages/Inventory/Inventory';
 import Banners from '../admin/pages/Banners/Banners';
 import Customers from '../admin/pages/Customers/Customers';
 import ExclusiveCoupons from '../admin/pages/Coupons/ExclusiveCoupons';
+import AdminReviews from '../admin/pages/Reviews/AdminReviews';
 import AdminLogin from '../admin/pages/Auth/AdminLogin';
 
 // Main Customer Layout Wrapper
@@ -110,6 +111,7 @@ export const AppRoutes = () => {
         <Route path="inventory" element={<Inventory />} />
         <Route path="banners" element={<Banners />} />
         <Route path="customers" element={<Customers />} />
+        <Route path="reviews" element={<AdminReviews />} />
         <Route path="coupons" element={<ExclusiveCoupons />} />
       </Route>
 

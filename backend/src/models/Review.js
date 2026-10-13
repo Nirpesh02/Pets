@@ -29,7 +29,16 @@ const reviewSchema = new mongoose.Schema(
     comment: {
       type: String,
       required: [true, 'Please provide review comment'],
-      maxlength: 500,
+      maxlength: 1000,
+    },
+    petInfo: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    isFeaturedOnHome: {
+      type: Boolean,
+      default: false,
     },
     photos: [String],
   },
@@ -37,6 +46,9 @@ const reviewSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Prevent multiple reviews per product by the same user
+reviewSchema.index({ product: 1, user: 1 }, { unique: true });
 
 const Review = mongoose.model('Review', reviewSchema);
 export default Review;

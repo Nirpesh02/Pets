@@ -12,6 +12,7 @@ import {
   LogOut,
   X,
   Gift,
+  Star,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -102,6 +103,15 @@ export const AdminSidebar = ({ isOpen, onClose }) => {
           >
             <Users size={18} />
             <span>Customers & Pets</span>
+          </NavLink>
+
+          <NavLink
+            to="/admin/reviews"
+            className={({ isActive }) => `admin-nav-link ${isActive ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <Star size={18} />
+            <span>Client Reviews</span>
           </NavLink>
 
           <NavLink
