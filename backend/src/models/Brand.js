@@ -5,7 +5,6 @@ const brandSchema = new mongoose.Schema(
     name: {
       type: String,
       required: [true, 'Please provide brand name'],
-      unique: true,
       trim: true,
     },
     slug: {
@@ -43,8 +42,8 @@ const brandSchema = new mongoose.Schema(
   }
 );
 
-// Index for case-insensitive search
-brandSchema.index({ name: 1 }, { collation: { locale: 'en', strength: 2 } });
+// Case-insensitive unique index on name
+brandSchema.index({ name: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
 
 const Brand = mongoose.model('Brand', brandSchema);
 export default Brand;

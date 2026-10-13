@@ -131,28 +131,50 @@ export const AddEditProduct = () => {
 
   const handleCreateBrand = async (e) => {
     if (e) e.preventDefault();
-    if (!newBrandName.trim()) {
+    const candidateName = newBrandName.trim();
+    if (!candidateName) {
       toast.error('Please enter a valid brand name');
+      return;
+    }
+
+    // Strict Case-Insensitive Duplicate Check
+    const existingDuplicate = brandsList.find(
+      (b) => b.trim().toLowerCase() === candidateName.toLowerCase()
+    );
+
+    if (existingDuplicate) {
+      toast.error(
+        `Brand "${existingDuplicate}" already exists! Duplicate brands are not allowed, regardless of uppercase or lowercase letters.`
+      );
       return;
     }
 
     try {
       setSavingBrand(true);
       const res = await brandApi.createBrand({
-        name: newBrandName.trim(),
+        name: candidateName,
         petTypes: [formData.petType],
       });
 
-      const brandName = res?.name || newBrandName.trim();
+      const brandName = res?.name || candidateName;
       const newDoc = res || { name: brandName, isCustom: true };
 
-      setBrandObjects((prev) => [newDoc, ...prev.filter((b) => (typeof b === 'string' ? b : b.name) !== brandName)]);
-      setBrandsList((prev) => (prev.includes(brandName) ? prev : [brandName, ...prev]));
+      setBrandObjects((prev) => [
+        newDoc,
+        ...prev.filter(
+          (b) => (typeof b === 'string' ? b : b.name).toLowerCase() !== brandName.toLowerCase()
+        ),
+      ]);
+      setBrandsList((prev) => [
+        brandName,
+        ...prev.filter((b) => b.toLowerCase() !== brandName.toLowerCase()),
+      ]);
       setFormData((prev) => ({ ...prev, brand: brandName }));
       toast.success(`🎉 Brand "${brandName}" added and saved in database!`);
       setNewBrandName('');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save brand to database');
+      const msg = err.response?.data?.message || err.message || 'Failed to save brand to database';
+      toast.error(msg);
     } finally {
       setSavingBrand(false);
     }

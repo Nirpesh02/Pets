@@ -102,17 +102,22 @@ export const createBrand = async (req, res, next) => {
     const trimmedName = name.trim();
     const slug = generateSlug(trimmedName);
 
-    // Check if brand exists (case insensitive)
+    // Escape any regex special characters
+    const escapedName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Strict case-insensitive check: if any brand exists with the same name (ignoring case) or same slug
     const existingBrand = await Brand.findOne({
-      name: { $regex: new RegExp(`^${trimmedName}$`, 'i') },
+      $or: [
+        { name: { $regex: new RegExp(`^${escapedName}$`, 'i') } },
+        { slug: slug },
+      ],
     });
 
     if (existingBrand) {
-      return sendSuccess(
+      return sendError(
         res,
-        { brand: existingBrand },
-        `Brand "${existingBrand.name}" already exists and is ready to use`,
-        200
+        `Brand "${existingBrand.name}" already exists! Duplicate brands are not allowed, regardless of uppercase or lowercase letters.`,
+        400
       );
     }
 
@@ -133,6 +138,13 @@ export const createBrand = async (req, res, next) => {
       201
     );
   } catch (error) {
+    if (error.code === 11000) {
+      return sendError(
+        res,
+        'This brand already exists in the database. Duplicate brands are not allowed.',
+        400
+      );
+    }
     next(error);
   }
 };
