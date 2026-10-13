@@ -101,14 +101,14 @@ html {
   -webkit-font-smoothing: antialiased;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
   min-height: 100vh;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip;
   position: relative;
 }
 
@@ -116,7 +116,7 @@ body {
   min-height: 100vh;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip;
   display: flex;
   flex-direction: column;
 }
@@ -594,20 +594,23 @@ h1, h2, h3, h4, h5, h6 {
 /* ========================================================
    TOPBAR & MAIN NAVBAR
    ======================================================== */
-.site-header {
+.top-banner-bar {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: #ffffff;
-  border-bottom: 1px solid var(--border-light);
-  box-shadow: var(--shadow-sm);
-}
-
-.top-banner-bar {
   background: #0f172a;
   color: #f8fafc;
   font-size: 0.8rem;
   padding: 6px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.site-header {
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 900;
 }
 
 .top-banner-content {

@@ -40,8 +40,8 @@ export const Navbar = () => {
   };
 
   return (
-    <header className="site-header">
-      {/* Top Announcement Bar */}
+    <>
+      {/* Top Announcement Bar (Sticky at the very top) */}
       <div className="top-banner-bar">
         <div className="container top-banner-content">
           <div className="top-banner-left">
@@ -56,8 +56,10 @@ export const Navbar = () => {
         </div>
       </div>
 
-      {/* Main Navbar */}
-      <div className="container main-navbar">
+      {/* Main & Category Navigation (Scrolls naturally with page) */}
+      <header className="site-header">
+        {/* Main Navbar */}
+        <div className="container main-navbar">
         {/* Brand Logo */}
         <Link to="/" className="brand-logo" onClick={() => setIsMobileMenuOpen(false)}>
           <div className="logo-icon-box">
@@ -369,6 +371,7 @@ export const Navbar = () => {
         </div>
       )}
     </header>
+    </>
   );
 };
 
